@@ -171,6 +171,8 @@ class AutoResponseEngine:
             active_db = next((db for db in db_candidates if os.path.exists(db)), None)
 
             for fname in os.listdir(self.quarantine_dir):
+                if not fname.endswith(".quarantine"):
+                    continue
                 fpath = os.path.join(self.quarantine_dir, fname)
                 if os.path.isfile(fpath):
                     # Extrai nome original limpo
