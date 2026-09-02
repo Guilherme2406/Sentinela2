@@ -1,0 +1,56 @@
+# Sentinela XDR — Arquivos ignorados pelo Git
+# (mantém o repositório limpo de artefatos de execução local)
+
+# Python cache / bytecode
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Logs e relatórios de execução
+*.log
+smoke_output.log
+test_output.log
+_run*.log
+_fe*.log
+
+# Artefatos de diagnóstico temporários
+_diag_*
+_jsdrive.py
+_validate_dashboard.py
+_served.html
+_jsblock.js
+_jscheck/
+_jscheck*
+_edge*
+_smoke*
+_vd_out.txt
+
+# Banco de dados e estado de execução soberano (gerados localmente)
+sentinel_events.db
+sentinel_runtime.json
+sentinel_daemon.log
+
+# Snapshots e modelos de IA gerados em tempo de execução
+sentinel_vault/snapshot_*/
+sentinel_vault/ai_isolation_forest.pkl
+
+# Arquivos restaurados/isolados em tempo de execução
+restored/*
+quarantine/*
+
+# Ambientes virtuais e IDE
+venv/
+.venv/
+env/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Mantém os ativos de decepção (canários, honeytokens e honeypots) — SÃO INTENCIONAIS
+!canary_traps/
+!sentinel_baits/
+!honeypots/
