@@ -39,7 +39,9 @@ sentinel_vault/ai_isolation_forest.pkl
 
 # Arquivos restaurados/isolados em tempo de execução
 restored/*
+!restored/.gitkeep
 quarantine/*
+!quarantine/.gitkeep
 
 # Ambientes virtuais e IDE
 venv/
