@@ -16,6 +16,7 @@ from functions_engine.core import (
 )
 from functions_engine.registry import FunctionRegistry
 from functions_engine.engine import FunctionsEngine
+from functions_engine.daemon import TriggerRule, TriggerWatchDaemon
 
 __all__ = [
     "SecurityItem",
@@ -27,6 +28,8 @@ __all__ = [
     "FunctionErrorType",
     "FunctionRegistry",
     "FunctionsEngine",
+    "TriggerRule",
+    "TriggerWatchDaemon",
 ]
 
 __version__ = "1.0.0"

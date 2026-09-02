@@ -43,22 +43,11 @@ from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
 from sentinel_api import app as flask_app, find_available_port, init_api
 
 def feed_monitoring_metrics():
-    """Alimenta o Functions Engine com métricas reais do host (CPU, memória, rede, processos)."""
+    """Alimenta o Functions Engine com telemetria do host e dos 20 motores de segurança."""
     try:
-        import psutil
-        from functions_engine.core import SecurityItem
-        from sentinel_api import functions_storage_instance
-        now = time.time()
-        storage = functions_storage_instance
-        if storage is None:
-            return
-        storage.append(SecurityItem(item_id="system.cpu.util", value=psutil.cpu_percent(interval=None), timestamp=now))
-        storage.append(SecurityItem(item_id="system.memory.util", value=psutil.virtual_memory().percent, timestamp=now))
-        storage.append(SecurityItem(item_id="system.processes.count", value=len(psutil.pids()), timestamp=now))
-        try:
-            storage.append(SecurityItem(item_id="system.net.connections", value=len(psutil.net_connections()), timestamp=now))
-        except Exception:
-            pass
+        from sentinel_api import telemetry_collector_instance, functions_storage_instance
+        if telemetry_collector_instance:
+            telemetry_collector_instance.feed_storage(functions_storage_instance)
     except Exception:
         pass
 

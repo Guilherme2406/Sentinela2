@@ -51,10 +51,12 @@ from sentinel_core.dlp_exfiltration_guard import DLPExfiltrationGuard
 from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
+from sentinel_core.telemetry_collector import SentinelTelemetryCollector
 
 # Functions Engine — Motor de Expressões de Monitoramento em Séries Temporais (estilo Zabbix)
 from functions_engine.engine import FunctionsEngine
 from functions_engine.core import SecurityItem, FunctionContext, RingBufferStorage
+from functions_engine.daemon import TriggerWatchDaemon, TriggerRule
 
 
 
@@ -124,6 +126,26 @@ functions_engine.context = FunctionContext(storage=functions_storage)
 functions_engine_instance = functions_engine
 functions_storage_instance = functions_storage
 
+# Coletor de telemetria e observador contínuo de triggers (Daemon)
+telemetry_collector = SentinelTelemetryCollector(
+    storage=functions_storage,
+    ztna_engine=ztna_engine,
+    firewall=firewall,
+    posture_guard=posture_guard,
+    soar=soar,
+    fim=fim,
+    identity_guard=identity_guard,
+)
+telemetry_collector_instance = telemetry_collector
+
+trigger_daemon = TriggerWatchDaemon(
+    engine=functions_engine,
+    logger=logger,
+    soar=soar,
+    eval_interval=5.0,
+)
+trigger_daemon_instance = trigger_daemon
+
 
 
 
@@ -186,7 +208,7 @@ def init_api(
     global logger_instance, active_shield_instance, soar_instance, threat_detector_instance, fim_instance
     global proc_monitor_instance, net_monitor_instance, geolocator_instance, firewall_instance
     global honeypot_instance, nids_instance, canary_instance, threat_intel_instance, edr_guard_instance, kernel_monitor_instance
-    global vault_instance, ai_detector_instance, identity_guard_instance, dlp_guard_instance, anti_exploit_guard_instance, perimeter_guard_instance, posture_guard_instance
+    global vault_instance, ai_detector_instance, ztna_engine_instance, identity_guard_instance, dlp_guard_instance, anti_exploit_guard_instance, perimeter_guard_instance, posture_guard_instance
     global functions_engine_instance, functions_storage_instance
     
     if logger: logger_instance = logger
@@ -211,9 +233,28 @@ def init_api(
     if kwargs.get("dlp_guard"): dlp_guard_instance = kwargs.get("dlp_guard")
     if kwargs.get("anti_exploit_guard"): anti_exploit_guard_instance = kwargs.get("anti_exploit_guard")
     if kwargs.get("perimeter_guard"): perimeter_guard_instance = kwargs.get("perimeter_guard")
-    if kwargs.get("posture_guard"): posture_guard_instance = kwargs.get("posture_guard")
     if functions_engine_ctx: functions_engine_instance = functions_engine_ctx
     if functions_storage_ctx: functions_storage_instance = functions_storage_ctx
+
+    global telemetry_collector_instance, trigger_daemon_instance
+    telemetry_collector_instance = SentinelTelemetryCollector(
+        storage=functions_storage_instance,
+        ztna_engine=ztna_engine_instance or ztna_engine,
+        firewall=firewall_instance or firewall,
+        posture_guard=posture_guard_instance or posture_guard,
+        soar=soar_instance or soar,
+        fim=fim_instance or fim,
+        identity_guard=identity_guard_instance or identity_guard,
+    )
+    try:
+        telemetry_collector_instance.feed_storage()
+    except Exception as e:
+        logging.debug(f"[TELEMETRY] Aviso na carga inicial: {e}")
+
+    if trigger_daemon_instance:
+        trigger_daemon_instance.logger = logger_instance or logger
+        trigger_daemon_instance.soar = soar_instance or soar
+        trigger_daemon_instance.start()
 
 
 def init_sentinel_services():
@@ -1645,6 +1686,80 @@ def functions_metrics_demo():
         "message": "Métricas de demonstração carregadas no Functions Engine (system.cpu.util, system.memory.util, network.latency.ms).",
         "items_count": len(storage),
     }), 200
+
+
+@app.route("/api/functions/alarms", methods=["GET"])
+def get_functions_alarms():
+    """Retorna o estado operacional do daemon de triggers, problemas ativos e histórico de alarmes."""
+    daemon = trigger_daemon_instance if trigger_daemon_instance else trigger_daemon
+    rules = daemon.list_rules()
+    active_problems = daemon.get_active_problems()
+    history = daemon.get_alarm_history(limit=50)
+    return jsonify({
+        "status": "success",
+        "total_rules": len(rules),
+        "active_problems_count": len(active_problems),
+        "overall_status": "PROBLEM" if active_problems else "OK",
+        "active_problems": active_problems,
+        "rules": rules,
+        "alarm_history": history,
+    }), 200
+
+
+@app.route("/api/functions/alarms/register", methods=["POST"])
+def register_functions_alarm():
+    """Cadastra uma nova regra de trigger contínua para monitoramento autônomo."""
+    data = get_request_data()
+    name = str(data.get("name", "")).strip()
+    expression = str(data.get("expression", "")).strip()
+    severity = str(data.get("severity", "HIGH")).strip().upper()
+    description = str(data.get("description", "")).strip()
+    required_consecutive = int(data.get("required_consecutive") or 1)
+
+    if not name or not expression:
+        return jsonify({"status": "error", "message": "Parâmetros 'name' e 'expression' são obrigatórios"}), 400
+
+    daemon = trigger_daemon_instance if trigger_daemon_instance else trigger_daemon
+    rule = daemon.register_rule(
+        name=name,
+        expression=expression,
+        severity=severity,
+        description=description,
+        required_consecutive=required_consecutive,
+    )
+    return jsonify({"status": "success", "message": f"Regra '{name}' cadastrada com sucesso.", "rule": rule.to_dict()}), 200
+
+
+@app.route("/api/functions/alarms/delete", methods=["POST", "DELETE"])
+def delete_functions_alarm():
+    """Remove uma regra de monitoramento contínuo cadastrada."""
+    data = get_request_data()
+    rule_id = str(data.get("rule_id", "")).strip()
+    if not rule_id:
+        return jsonify({"status": "error", "message": "Parâmetro 'rule_id' é obrigatório"}), 400
+
+    daemon = trigger_daemon_instance if trigger_daemon_instance else trigger_daemon
+    removed = daemon.remove_rule(rule_id)
+    if removed:
+        return jsonify({"status": "success", "message": f"Regra '{rule_id}' removida com sucesso."}), 200
+    return jsonify({"status": "error", "message": f"Regra '{rule_id}' não encontrada."}), 404
+
+
+@app.route("/api/functions/presets", methods=["GET"])
+def get_functions_presets():
+    """Retorna os presets recomendados de monitoramento cibernético e infraestrutura."""
+    daemon = trigger_daemon_instance if trigger_daemon_instance else trigger_daemon
+    presets = getattr(daemon, "DEFAULT_PRESETS", [])
+    return jsonify({"status": "success", "count": len(presets), "presets": presets}), 200
+
+
+@app.route("/api/functions/collect", methods=["POST"])
+def trigger_telemetry_collect():
+    """Força um ciclo imediato de coleta de telemetria dos 20 motores e do host."""
+    collector = telemetry_collector_instance if telemetry_collector_instance else telemetry_collector
+    storage = functions_storage_instance if functions_storage_instance else functions_storage
+    count = collector.feed_storage(storage)
+    return jsonify({"status": "success", "message": f"{count} métricas de telemetria ingeridas.", "total_items": len(storage)}), 200
 
 
 @app.route("/api/functions/clear", methods=["POST"])

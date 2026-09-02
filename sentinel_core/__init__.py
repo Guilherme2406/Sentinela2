@@ -44,6 +44,7 @@ from sentinel_core.dlp_exfiltration_guard import DLPExfiltrationGuard, DLPPatter
 from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
+from sentinel_core.telemetry_collector import SentinelTelemetryCollector
 
 __all__ = [
     "SecurityEventLogger",
@@ -94,5 +95,6 @@ __all__ = [
     "DLPPatternMatcher",
     "ExecutionAntiExploitGuard",
     "NetworkPerimeterGuard",
-    "PosturePersistenceGuard"
+    "PosturePersistenceGuard",
+    "SentinelTelemetryCollector"
 ]

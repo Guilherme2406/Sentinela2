@@ -282,20 +282,60 @@ class FunctionsEngine:
         return func.evaluate(*args)
 
     # ------------------------------------------------------------------
-    # Avaliação de expressões de trigger (comparações)
+    # Avaliação de expressões de trigger (comparações e operadores lógicos)
     # ------------------------------------------------------------------
     def evaluate_trigger(self, expression: str, **kwargs: Any) -> bool:
         """Avalia uma expressão de trigger, retornando True/False.
 
-        Suporta operadores de comparação: >, <, >=, <=, =, ==, !=, <>.
-        Exemplo: `last("system.cpu[0,util]") > 90`
+        Suporta operadores lógicos (and, or, not) e relacionais (>, <, >=, <=, =, ==, !=, <>).
+        Exemplos:
+            last("system.cpu.util") > 90
+            last("system.cpu.util") > 85 and last("system.memory.util") > 80
+            not (last("system.cpu.util") < 10)
         """
         expression = expression.strip()
+        if not expression:
+            return False
 
-        # Procura por operadores de comparação
+        # Remove parênteses externos redundantes se envolverem toda a expressão
+        while expression.startswith("(") and expression.endswith(")"):
+            depth = 0
+            encloses_all = True
+            for idx, ch in enumerate(expression[:-1]):
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0:
+                        encloses_all = False
+                        break
+            if encloses_all:
+                expression = expression[1:-1].strip()
+            else:
+                break
+
+        # 1. Operador lógico 'or' (menor precedência)
+        or_idx = self._find_logical_operator(expression, "or")
+        if or_idx >= 0:
+            left_part = expression[:or_idx].strip()
+            right_part = expression[or_idx + 2:].strip()
+            return self.evaluate_trigger(left_part, **kwargs) or self.evaluate_trigger(right_part, **kwargs)
+
+        # 2. Operador lógico 'and'
+        and_idx = self._find_logical_operator(expression, "and")
+        if and_idx >= 0:
+            left_part = expression[:and_idx].strip()
+            right_part = expression[and_idx + 3:].strip()
+            return self.evaluate_trigger(left_part, **kwargs) and self.evaluate_trigger(right_part, **kwargs)
+
+        # 3. Operador lógico unário 'not'
+        if expression.lower().startswith("not ") or expression.lower().startswith("not("):
+            sub_expr = expression[3:].strip()
+            return not self.evaluate_trigger(sub_expr, **kwargs)
+
+        # 4. Procura por operadores de comparação relacionais
         operators = [">=", "<=", "!=", "<>", "==", "=", ">", "<"]
         for op in operators:
-            # Encontra o operador fora de strings
             idx = self._find_operator(expression, op)
             if idx >= 0:
                 left = expression[:idx].strip()
@@ -308,6 +348,39 @@ class FunctionsEngine:
 
         # Sem operador, avalia como expressão simples
         return bool(self.evaluate(expression, **kwargs))
+
+    def _find_logical_operator(self, expression: str, operator: str) -> int:
+        """Encontra a posição de um operador lógico ('and', 'or') fora de strings e parênteses."""
+        in_string: Optional[str] = None
+        depth = 0
+        i = 0
+        op_len = len(operator)
+        expr_len = len(expression)
+
+        while i < expr_len:
+            ch = expression[i]
+
+            if in_string:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == in_string:
+                    in_string = None
+            else:
+                if ch in "\"'":
+                    in_string = ch
+                elif ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                elif depth == 0 and i + op_len <= expr_len:
+                    if expression[i : i + op_len].lower() == operator.lower():
+                        prev_char = expression[i - 1] if i > 0 else " "
+                        next_char = expression[i + op_len] if i + op_len < expr_len else " "
+                        if (prev_char.isspace() or prev_char in ")") and (next_char.isspace() or next_char in "("):
+                            return i
+            i += 1
+        return -1
 
     def _find_operator(self, expression: str, operator: str) -> int:
         """Encontra a posição de um operador fora de strings e parênteses."""

@@ -2159,7 +2159,7 @@
             </div>
             <div class="modal-body">
                 <!-- STATUS DO MOTOR -->
-                <div id="functionsStatusCards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.8rem; margin-bottom: 1rem;">
+                <div id="functionsStatusCards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; margin-bottom: 1rem;">
                     <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.9rem; text-align: center;">
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Funções Registradas</div>
                         <div id="functionsCount" style="font-size: 1.9rem; font-weight: 800; color: var(--accent-warning); font-family: 'JetBrains Mono', monospace;">…</div>
@@ -2172,23 +2172,55 @@
                         <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Itens no Buffer</div>
                         <div id="functionsItemsCount" style="font-size: 1.9rem; font-weight: 800; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace;">…</div>
                     </div>
+                    <div style="background: rgba(239, 68, 68, 0.06); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 0.9rem; text-align: center;">
+                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Alarmes Ativos</div>
+                        <div id="functionsAlarmsCount" style="font-size: 1.6rem; font-weight: 800; color: var(--accent-green); font-family: 'JetBrains Mono', monospace;">0 OK</div>
+                    </div>
                 </div>
 
-                <!-- CALCULADORA DE EXPRESSÕES -->
+                <!-- PAINEL DO TRIGGER WATCH DAEMON (MONITORAMENTO CONTÍNUO) -->
+                <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.9rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <div style="font-size: 0.85rem; font-weight: 700; color: #fff;">
+                            <i class="fa-solid fa-tower-broadcast" style="color: var(--accent-red);"></i> Regras em Monitoramento Contínuo (Trigger Watcher Daemon)
+                        </div>
+                        <div style="display: flex; gap: 0.4rem;">
+                            <button onclick="collectFunctionsTelemetry()" class="btn-action" style="padding: 0.3rem 0.6rem; font-size: 0.72rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);" title="Forçar ciclo de telemetria dos 20 motores">
+                                <i class="fa-solid fa-arrows-rotate"></i> Sincronizar Telemetria
+                            </button>
+                            <button onclick="toggleRegisterRuleForm()" class="btn-action" style="padding: 0.3rem 0.6rem; font-size: 0.72rem; color: var(--accent-warning); border-color: rgba(245, 158, 11, 0.4);">
+                                <i class="fa-solid fa-plus"></i> Nova Regra
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="newRuleFormContainer" style="display: none; background: #0b0f1a; border: 1px dashed var(--border-color); border-radius: 6px; padding: 0.8rem; margin-bottom: 0.8rem;">
+                        <div style="display: grid; grid-template-columns: 2fr 3fr 1fr auto; gap: 0.5rem; align-items: center;">
+                            <input type="text" id="newRuleName" placeholder="Nome da Regra (ex: ZTNA Risk)" style="background: #111622; border: 1px solid var(--border-color); color: #fff; border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.75rem;">
+                            <input type="text" id="newRuleExpr" placeholder='Expressão: last("sentinel.ztna.risk_score") >= 75' style="background: #111622; border: 1px solid var(--border-color); color: #fff; border-radius: 4px; padding: 0.4rem 0.6rem; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;">
+                            <select id="newRuleSeverity" style="background: #111622; border: 1px solid var(--border-color); color: #fff; border-radius: 4px; padding: 0.4rem; font-size: 0.75rem;">
+                                <option value="DISASTER">DISASTER</option>
+                                <option value="HIGH" selected>HIGH</option>
+                                <option value="WARNING">WARNING</option>
+                                <option value="INFO">INFO</option>
+                            </select>
+                            <button onclick="submitNewRule()" class="btn-action btn-action-primary" style="padding: 0.4rem 0.8rem; font-size: 0.75rem;">Salvar</button>
+                        </div>
+                    </div>
+
+                    <div id="functionsRulesList" style="max-height: 160px; overflow-y: auto;">
+                        <div style="text-align: center; color: var(--text-muted); padding: 0.8rem; font-size: 0.75rem;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando regras…</div>
+                    </div>
+                </div>
+
+                <!-- CALCULADORA DE EXPRESSÕES E PRESETS -->
                 <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
                     <div style="font-size: 0.85rem; font-weight: 700; color: #fff; margin-bottom: 0.6rem;"><i class="fa-solid fa-calculator" style="color: var(--accent-warning);"></i> Calculadora de Expressões & Triggers</div>
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <select id="functionsQuickExpr" onchange="if(this.value){document.getElementById('functionsExpression').value=this.value;}">
-                            <option value="">Exemplos rápidos…</option>
-                            <option value='last("system.cpu.util")'>last("system.cpu.util")</option>
-                            <option value='avg("system.cpu.util", 0)'>avg("system.cpu.util", 0)</option>
-                            <option value='max("system.cpu.util")'>max("system.cpu.util")</option>
-                            <option value='percentile("system.cpu.util", 0, 95)'>percentile(…, 0, 95)</option>
-                            <option value='forecast("system.cpu.util", 0, 300)'>forecast(…, 0, 300)</option>
-                            <option value='timeleft("system.cpu.util", 100, 0)'>timeleft(…, 100, 0)</option>
-                            <option value='monoinc("system.cpu.util", 0)'>monoinc(…, 0)</option>
+                        <select id="functionsPresetSelect" onchange="applyFunctionsPreset(this.value)" style="background: #0b0f1a; border: 1px solid var(--border-color); color: var(--accent-cyan); border-radius: 6px; padding: 0.55rem 0.8rem; font-size: 0.8rem;">
+                            <option value="">Biblioteca de Presets…</option>
                         </select>
-                        <input type="text" id="functionsExpression" placeholder='Ex: last("system.cpu.util") > 80' style="flex: 1; min-width: 260px; background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.55rem 0.8rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; outline: none;">
+                        <input type="text" id="functionsExpression" placeholder='Ex: last("sentinel.ztna.risk_score") >= 75' style="flex: 1; min-width: 260px; background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.55rem 0.8rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; outline: none;">
                         <button onclick="runFunctionsEvaluate()" class="btn-action btn-action-primary" style="padding: 0.55rem 1rem;">
                             <i class="fa-solid fa-play"></i> Avaliar
                         </button>
@@ -4163,6 +4195,8 @@
             document.getElementById('functionsModal').style.display = 'flex';
             loadFunctionsStatus();
             loadFunctionsList();
+            loadFunctionsPresets();
+            loadFunctionsAlarms();
         }
 
         function closeFunctionsModal() {
@@ -4323,6 +4357,158 @@
                 loadFunctionsStatus();
             } catch (err) {
                 setFunctionsResult('🔴 Erro ao listar itens: ' + err, 'var(--accent-red)');
+            }
+        }
+
+        async function loadFunctionsPresets() {
+            const sel = document.getElementById('functionsPresetSelect');
+            if (!sel || sel.options.length > 1) return;
+            try {
+                const res = await fetch('/api/functions/presets');
+                const data = await res.json();
+                if (data.status === 'success' && data.presets) {
+                    data.presets.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.expression;
+                        opt.innerText = `[${p.severity}] ${p.name}`;
+                        opt.title = p.description;
+                        sel.appendChild(opt);
+                    });
+                }
+            } catch (err) {
+                console.error('Erro ao carregar presets do Functions Engine:', err);
+            }
+        }
+
+        function applyFunctionsPreset(val) {
+            if (!val) return;
+            const input = document.getElementById('functionsExpression');
+            if (input) input.value = val;
+        }
+
+        async function collectFunctionsTelemetry() {
+            try {
+                const res = await fetch('/api/functions/collect', { method: 'POST' });
+                const data = await res.json();
+                alert(`🌐 ${data.message}\nTotal de métricas armazenadas: ${data.total_items}`);
+                loadFunctionsStatus();
+                loadFunctionsAlarms();
+            } catch (err) {
+                alert('Erro ao sincronizar telemetria: ' + err);
+            }
+        }
+
+        async function loadFunctionsAlarms() {
+            const listEl = document.getElementById('functionsRulesList');
+            const badgeEl = document.getElementById('functionsAlarmsCount');
+            if (!listEl) return;
+            try {
+                const res = await fetch('/api/functions/alarms');
+                const data = await res.json();
+                if (data.status !== 'success') return;
+
+                const problemsCount = data.active_problems_count || 0;
+                if (badgeEl) {
+                    if (problemsCount === 0) {
+                        badgeEl.innerText = '0 OK';
+                        badgeEl.style.color = 'var(--accent-green)';
+                    } else {
+                        badgeEl.innerText = `${problemsCount} ATIVOS`;
+                        badgeEl.style.color = 'var(--accent-red)';
+                    }
+                }
+
+                const rules = data.rules || [];
+                if (rules.length === 0) {
+                    listEl.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 0.8rem; font-size: 0.75rem;">Nenhuma regra cadastrada.</div>';
+                    return;
+                }
+
+                listEl.innerHTML = rules.map(r => {
+                    const isProblem = r.status === 'PROBLEM';
+                    const statusBadge = isProblem
+                        ? `<span style="background: rgba(239, 68, 68, 0.2); color: var(--accent-red); padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.65rem; border: 1px solid var(--accent-red); animation: pulse 1.5s infinite;"><i class="fa-solid fa-triangle-exclamation"></i> PROBLEM</span>`
+                        : `<span style="background: rgba(16, 185, 129, 0.15); color: var(--accent-green); padding: 2px 6px; border-radius: 4px; font-weight: 700; font-size: 0.65rem; border: 1px solid var(--accent-green);"><i class="fa-solid fa-circle-check"></i> OK</span>`;
+                    
+                    const sevColor = r.severity === 'DISASTER' ? 'var(--accent-red)' : (r.severity === 'HIGH' ? 'var(--accent-warning)' : 'var(--accent-cyan)');
+                    const sevBadge = `<span style="color: ${sevColor}; font-size: 0.65rem; font-weight: 700;">[${r.severity}]</span>`;
+
+                    return `<div style="display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.25); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.45rem 0.65rem; margin-bottom: 0.4rem;">
+                        <div style="flex: 1; min-width: 0; margin-right: 0.5rem;">
+                            <div style="font-size: 0.78rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 0.4rem;">
+                                ${r.name} ${sevBadge} ${statusBadge}
+                            </div>
+                            <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                ${r.expression}
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 0.3rem;">
+                            <button onclick="document.getElementById('functionsExpression').value='${r.expression.replace(/'/g, "\\'")}'; runFunctionsTrigger();" class="btn-action" style="padding: 0.25rem 0.5rem; font-size: 0.65rem; color: var(--accent-cyan); border-color: rgba(0,240,255,0.3);" title="Testar trigger agora">
+                                <i class="fa-solid fa-play"></i>
+                            </button>
+                            <button onclick="deleteFunctionRule('${r.id}')" class="btn-action" style="padding: 0.25rem 0.5rem; font-size: 0.65rem; color: var(--accent-red); border-color: rgba(239,68,68,0.3);" title="Remover regra">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>`;
+                }).join('');
+            } catch (err) {
+                listEl.innerHTML = `<div style="color: var(--accent-red); font-size: 0.75rem; text-align: center;">Erro ao carregar alarmes: ${err}</div>`;
+            }
+        }
+
+        function toggleRegisterRuleForm() {
+            const form = document.getElementById('newRuleFormContainer');
+            if (!form) return;
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function submitNewRule() {
+            const name = document.getElementById('newRuleName').value.trim();
+            const expr = document.getElementById('newRuleExpr').value.trim();
+            const sev = document.getElementById('newRuleSeverity').value;
+
+            if (!name || !expr) {
+                alert('Informe o Nome da Regra e a Expressão.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/functions/alarms/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, expression: expr, severity: sev })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    document.getElementById('newRuleName').value = '';
+                    document.getElementById('newRuleExpr').value = '';
+                    toggleRegisterRuleForm();
+                    loadFunctionsAlarms();
+                } else {
+                    alert('Erro: ' + (data.message || data.error));
+                }
+            } catch (err) {
+                alert('Erro na requisição: ' + err);
+            }
+        }
+
+        async function deleteFunctionRule(ruleId) {
+            if (!confirm(`Deseja remover a regra ${ruleId}?`)) return;
+            try {
+                const res = await fetch('/api/functions/alarms/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ rule_id: ruleId })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    loadFunctionsAlarms();
+                } else {
+                    alert('Erro: ' + (data.message || data.error));
+                }
+            } catch (err) {
+                alert('Erro na requisição: ' + err);
             }
         }
     </script>

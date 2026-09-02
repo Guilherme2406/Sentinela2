@@ -1,16 +1,16 @@
 # 🛡️ Relatório Completo de Testes — Sentinela2 XDR
 
-**Data da execução:** 02/09/2026 20:16:18  
+**Data da execução:** 02/09/2026 20:36:27  
 **Ambiente:** Python 3.14.7 — Windows 11  
-**Duração total:** 5.53s  
+**Duração total:** 7.84s  
 **Status Geral:** ✅ APROVADO (100% OPERACIONAL)
 
 ## 📊 Resumo Executivo
 
 | Métrica | Valor |
 |---|---|
-| Total de testes unitários | 57 |
-| Aprovados | 57 |
+| Total de testes unitários | 190 (58 no test_suite + 132 no test_functions_engine) |
+| Aprovados | 190 |
 | Falhas | 0 |
 | Erros | 0 |
 | Pulados | 0 |
@@ -18,11 +18,17 @@
 
 **Escopo da validação:**
 
-- Import de todos os módulos do `sentinel_core/` (53 módulos soberanos, 0 falhas)
+- Import de todos os módulos do `sentinel_core/` (54 módulos soberanos, 0 falhas)
 - Validação das **20 Camadas Soberanas de Defesa Ativa**
-- Cruzamento dos 48 endpoints consumidos pelo `dashboard.html` com as rotas da API
-- Cruzamento dos 60 handlers `onclick` do frontend com as funções JavaScript definidas
-- Smoke test em 55+ endpoints HTTP — 0 erros 5xx
+- Modernização do **Functions Engine**:
+  - `SentinelTelemetryCollector`: Ingestão contínua de métricas dos 20 motores de defesa e do SO
+  - `TriggerWatchDaemon`: Observador autônomo com detecção de estados (`OK` / `PROBLEM`), histerese e log de incidentes
+  - Avaliador de expressões com suporte a operadores lógicos compostos (`and`, `or`, `not` e parênteses)
+  - Endpoints REST de Alarmes (`/api/functions/alarms`, `/api/functions/presets`, `/api/functions/collect`)
+  - Painel de Alarmes e Biblioteca de Presets no `dashboard.html`
+- Cruzamento dos endpoints consumidos pelo `dashboard.html` com as rotas da API
+- Cruzamento dos handlers `onclick` do frontend com as funções JavaScript definidas
+- Smoke test em 60+ endpoints HTTP — 0 erros 5xx
 - Fluxos end-to-end:
   - LSASS Armor & Anti-Dumping (Mimikatz, SAM/SYSTEM, Potato PrivEsc)
   - DLP & Exfiltração (Validação Módulo 11 CPF/CNPJ, Algoritmo Luhn de Cartões, USB Write-Protect)

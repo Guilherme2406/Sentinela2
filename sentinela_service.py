@@ -260,6 +260,12 @@ class SentinelBackgroundDaemon:
                     ztna_engine.decay_risk_score()
                 except Exception as e:
                     logging.debug(f"[ZTNA DECAY ERROR] {e}")
+                try:
+                    from sentinel_api import telemetry_collector_instance, functions_storage_instance
+                    if telemetry_collector_instance:
+                        telemetry_collector_instance.feed_storage(functions_storage_instance)
+                except Exception as e:
+                    logging.debug(f"[TELEMETRY SCAN ERROR] {e}")
 
                 # Varreduras periódicas dos motores de identidade, exploit, perímetro e postura
                 if cycle % 3 == 0:

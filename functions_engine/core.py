@@ -221,6 +221,14 @@ class RingBufferStorage(TimeSeriesStorage):
             if len(bucket) > self.max_size:
                 del bucket[: len(bucket) - self.max_size]
 
+    def append_many(self, items: List[SecurityItem]) -> None:
+        with self._lock:
+            for item in items:
+                bucket = self._data.setdefault(item.item_id, [])
+                bucket.append(item)
+                if len(bucket) > self.max_size:
+                    del bucket[: len(bucket) - self.max_size]
+
     def query(
         self,
         item_id: str,

@@ -1131,6 +1131,40 @@ class TestPosturePersistenceGuard(unittest.TestCase):
             self.assertEqual(sub.get("status"), "OPERACIONAL")
             self.assertEqual(sub.get("health"), 100)
 
+    def test_07_functions_alarms_and_telemetry_endpoints(self):
+        """Valida os novos endpoints do Functions Engine: alarmes, presets e coleta de telemetria."""
+        # 1. Presets
+        res_presets = self.client.get("/api/functions/presets")
+        self.assertEqual(res_presets.status_code, 200)
+        self.assertGreaterEqual(res_presets.get_json().get("count", 0), 3)
+
+        # 2. Coleta de telemetria
+        res_collect = self.client.post("/api/functions/collect")
+        self.assertEqual(res_collect.status_code, 200)
+        self.assertEqual(res_collect.get_json().get("status"), "success")
+
+        # 3. Cadastro de regra de alarme
+        res_reg = self.client.post("/api/functions/alarms/register", json={
+            "name": "Alarme Teste API",
+            "expression": 'last("sentinel.active_layers.count") >= 20',
+            "severity": "INFO",
+            "description": "Teste automatizado de integridade"
+        })
+        self.assertEqual(res_reg.status_code, 200)
+        rule_id = res_reg.get_json().get("rule", {}).get("id")
+        self.assertIsNotNone(rule_id)
+
+        # 4. Consulta de alarmes
+        res_alarms = self.client.get("/api/functions/alarms")
+        self.assertEqual(res_alarms.status_code, 200)
+        self.assertEqual(res_alarms.get_json().get("status"), "success")
+        self.assertIn("rules", res_alarms.get_json())
+
+        # 5. Remoção de regra de alarme
+        res_del = self.client.post("/api/functions/alarms/delete", json={"rule_id": rule_id})
+        self.assertEqual(res_del.status_code, 200)
+        self.assertEqual(res_del.get_json().get("status"), "success")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -643,5 +643,113 @@ class TestErrorHandling(TestFunctionsEngineBase):
         self.assertEqual(ctx.exception.error_type, FunctionErrorType.INVALID_VALUE)
 
 
+class TestLogicalOperatorsInTriggers(TestFunctionsEngineBase):
+    """Testes de operadores lógicos compostos (and, or, not, parênteses) em triggers."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine.ingest(SecurityItem("metric.cpu", value=95, timestamp=1000))
+        self.engine.ingest(SecurityItem("metric.ram", value=70, timestamp=1000))
+        self.engine.ingest(SecurityItem("metric.disk", value=40, timestamp=1000))
+
+    def test_and_operator(self):
+        # Ambos verdadeiros
+        self.assertTrue(self.engine.evaluate_trigger('last("metric.cpu") > 90 and last("metric.ram") > 60'))
+        # Um falso
+        self.assertFalse(self.engine.evaluate_trigger('last("metric.cpu") > 90 and last("metric.ram") > 80'))
+
+    def test_or_operator(self):
+        # Pelo menos um verdadeiro
+        self.assertTrue(self.engine.evaluate_trigger('last("metric.cpu") > 100 or last("metric.ram") > 60'))
+        # Ambos falsos
+        self.assertFalse(self.engine.evaluate_trigger('last("metric.cpu") > 100 or last("metric.ram") > 90'))
+
+    def test_not_operator(self):
+        # Negação de falso resulta em verdadeiro
+        self.assertTrue(self.engine.evaluate_trigger('not (last("metric.cpu") < 50)'))
+        # Negação de verdadeiro resulta em falso
+        self.assertFalse(self.engine.evaluate_trigger('not (last("metric.cpu") > 50)'))
+
+    def test_parentheses_composition(self):
+        expr = '(last("metric.cpu") > 90 and last("metric.ram") > 65) or last("metric.disk") > 80'
+        self.assertTrue(self.engine.evaluate_trigger(expr))
+
+
+class TestTriggerWatchDaemon(TestFunctionsEngineBase):
+    """Testes do TriggerWatchDaemon e transições de alarme."""
+
+    def setUp(self):
+        super().setUp()
+        from functions_engine.daemon import TriggerWatchDaemon, TriggerRule
+        self.daemon = TriggerWatchDaemon(engine=self.engine, eval_interval=0.1)
+
+    def test_presets_loaded(self):
+        rules = self.daemon.list_rules()
+        self.assertGreaterEqual(len(rules), 3)
+
+    def test_register_and_remove_rule(self):
+        rule = self.daemon.register_rule(
+            name="Test CPU Rule",
+            expression='last("test.cpu") > 80',
+            severity="HIGH"
+        )
+        self.assertIsNotNone(rule)
+        self.assertIn(rule.id, [r["id"] for r in self.daemon.list_rules()])
+
+        # Remoção
+        removed = self.daemon.remove_rule(rule.id)
+        self.assertTrue(removed)
+        self.assertNotIn(rule.id, [r["id"] for r in self.daemon.list_rules()])
+
+    def test_run_cycle_transition_to_problem_and_resolve(self):
+        self.daemon._rules.clear()
+        self.daemon.register_rule(
+            name="CPU High",
+            expression='last("system.cpu.test") > 80',
+            severity="HIGH",
+            required_consecutive=1,
+            rule_id="cpu_high_rule"
+        )
+
+        # 1. Sem dados ou abaixo do limiar -> OK
+        self.engine.ingest(SecurityItem("system.cpu.test", value=50, timestamp=1000))
+        res1 = self.daemon.run_cycle()
+        self.assertEqual(res1["active_problems"], 0)
+        self.assertEqual(self.daemon._rules["cpu_high_rule"].status, "OK")
+
+        # 2. Acima do limiar -> PROBLEM
+        self.engine.ingest(SecurityItem("system.cpu.test", value=95, timestamp=1010))
+        res2 = self.daemon.run_cycle()
+        self.assertEqual(res2["active_problems"], 1)
+        self.assertEqual(self.daemon._rules["cpu_high_rule"].status, "PROBLEM")
+        self.assertGreaterEqual(len(self.daemon.get_alarm_history()), 1)
+
+        # 3. Retorna abaixo do limiar -> Normaliza para OK
+        self.engine.ingest(SecurityItem("system.cpu.test", value=40, timestamp=1020))
+        res3 = self.daemon.run_cycle()
+        self.assertEqual(res3["active_problems"], 0)
+        self.assertEqual(self.daemon._rules["cpu_high_rule"].status, "OK")
+
+
+class TestTelemetryCollector(TestFunctionsEngineBase):
+    """Testes do coletor central de telemetria."""
+
+    def test_telemetry_collection_and_feed(self):
+        from sentinel_core.telemetry_collector import SentinelTelemetryCollector
+        collector = SentinelTelemetryCollector(storage=self.storage)
+        items = collector.collect_all()
+
+        # Deve conter métricas de sistema e camadas
+        item_ids = [it.item_id for it in items]
+        self.assertIn("sentinel.active_layers.count", item_ids)
+        self.assertIn("sentinel.ztna.risk_score", item_ids)
+        self.assertIn("sentinel.posture.hardening_score", item_ids)
+
+        # Alimenta o storage
+        fed = collector.feed_storage(self.storage)
+        self.assertGreater(fed, 0)
+        self.assertEqual(self.engine.evaluate('last("sentinel.active_layers.count")'), 20)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
