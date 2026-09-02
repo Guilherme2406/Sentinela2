@@ -1165,6 +1165,14 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         self.assertEqual(res_del.status_code, 200)
         self.assertEqual(res_del.get_json().get("status"), "success")
 
+        # 6. Sumário de telemetria estruturado para gráficos
+        res_summary = self.client.get("/api/functions/telemetry/summary")
+        self.assertEqual(res_summary.status_code, 200)
+        sum_json = res_summary.get_json()
+        self.assertEqual(sum_json.get("status"), "success")
+        self.assertIn("metrics", sum_json)
+        self.assertGreater(sum_json.get("total_metrics", 0), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

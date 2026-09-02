@@ -20,6 +20,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+    <!-- Chart.js para Gráficos de Telemetria em Tempo Real -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <style>
         :root {
             --bg-dark: #080b11;
@@ -2158,40 +2161,151 @@
                 </button>
             </div>
             <div class="modal-body">
-                <!-- STATUS DO MOTOR -->
-                <div id="functionsStatusCards" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.8rem; margin-bottom: 1rem;">
-                    <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 8px; padding: 0.9rem; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Funções Registradas</div>
-                        <div id="functionsCount" style="font-size: 1.9rem; font-weight: 800; color: var(--accent-warning); font-family: 'JetBrains Mono', monospace;">…</div>
-                    </div>
-                    <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 0.9rem; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Categorias</div>
-                        <div id="functionsCategories" style="font-size: 1.05rem; font-weight: 700; color: var(--accent-green); padding-top: 0.4rem;">…</div>
-                    </div>
-                    <div style="background: rgba(0, 240, 255, 0.06); border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 8px; padding: 0.9rem; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Itens no Buffer</div>
-                        <div id="functionsItemsCount" style="font-size: 1.9rem; font-weight: 800; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace;">…</div>
-                    </div>
-                    <div style="background: rgba(239, 68, 68, 0.06); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 0.9rem; text-align: center;">
-                        <div style="font-size: 0.7rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px;">Alarmes Ativos</div>
-                        <div id="functionsAlarmsCount" style="font-size: 1.6rem; font-weight: 800; color: var(--accent-green); font-family: 'JetBrains Mono', monospace;">0 OK</div>
+                <!-- 1. VITRINE DE TELEMETRIA AO VIVO (GAUGES & PROGRESS BARS) -->
+                <div style="font-size: 0.82rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span><i class="fa-solid fa-heart-pulse" style="color: var(--accent-cyan);"></i> Telemetria Operacional & Postura em Tempo Real</span>
+                    <div style="display: flex; gap: 0.4rem;">
+                        <button onclick="collectFunctionsTelemetry()" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.7rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);" title="Forçar ciclo de telemetria dos 20 motores">
+                            <i class="fa-solid fa-arrows-rotate"></i> Sincronizar Agora
+                        </button>
+                        <button onclick="loadFunctionsDemoData()" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.7rem; color: var(--accent-green); border-color: rgba(16, 185, 129, 0.4);" title="Carregar métricas simuladas no buffer">
+                            <i class="fa-solid fa-flask"></i> Carregar Demo
+                        </button>
                     </div>
                 </div>
 
-                <!-- PAINEL DO TRIGGER WATCH DAEMON (MONITORAMENTO CONTÍNUO) -->
+                <div id="liveTelemetryCardsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;">
+                    <!-- Card CPU -->
+                    <div style="background: rgba(0, 240, 255, 0.04); border: 1px solid rgba(0, 240, 255, 0.25); border-radius: 8px; padding: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--text-muted);">
+                            <span><i class="fa-solid fa-microchip" style="color: var(--accent-cyan);"></i> CPU HOST</span>
+                            <span id="metricValCpu" style="font-weight: 700; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace;">0.0%</span>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.08); border-radius: 4px; height: 6px; width: 100%; margin: 0.45rem 0; overflow: hidden;">
+                            <div id="metricBarCpu" style="background: var(--accent-cyan); height: 100%; width: 0%; transition: width 0.4s ease;"></div>
+                        </div>
+                        <div id="metricStatsCpu" style="font-size: 0.62rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                            <span>Mín: 0%</span><span>Méd: 0%</span><span>Máx: 0%</span>
+                        </div>
+                    </div>
+
+                    <!-- Card Memória RAM -->
+                    <div style="background: rgba(16, 185, 129, 0.04); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--text-muted);">
+                            <span><i class="fa-solid fa-memory" style="color: var(--accent-green);"></i> MEMÓRIA RAM</span>
+                            <span id="metricValRam" style="font-weight: 700; color: var(--accent-green); font-family: 'JetBrains Mono', monospace;">0.0%</span>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.08); border-radius: 4px; height: 6px; width: 100%; margin: 0.45rem 0; overflow: hidden;">
+                            <div id="metricBarRam" style="background: var(--accent-green); height: 100%; width: 0%; transition: width 0.4s ease;"></div>
+                        </div>
+                        <div id="metricStatsRam" style="font-size: 0.62rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                            <span>Mín: 0%</span><span>Méd: 0%</span><span>Máx: 0%</span>
+                        </div>
+                    </div>
+
+                    <!-- Card ZTNA CARTA -->
+                    <div style="background: rgba(168, 85, 247, 0.04); border: 1px solid rgba(168, 85, 247, 0.25); border-radius: 8px; padding: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--text-muted);">
+                            <span><i class="fa-solid fa-shield-halved" style="color: var(--accent-purple);"></i> RISCO ZTNA</span>
+                            <span id="metricValZtna" style="font-weight: 700; color: var(--accent-purple); font-family: 'JetBrains Mono', monospace;">0.0 pts</span>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.08); border-radius: 4px; height: 6px; width: 100%; margin: 0.45rem 0; overflow: hidden;">
+                            <div id="metricBarZtna" style="background: var(--accent-purple); height: 100%; width: 0%; transition: width 0.4s ease;"></div>
+                        </div>
+                        <div id="metricStatsZtna" style="font-size: 0.62rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                            <span>Postura: <b style="color:var(--accent-green);">TRUSTED</b></span>
+                        </div>
+                    </div>
+
+                    <!-- Card CIS Hardening -->
+                    <div style="background: rgba(245, 158, 11, 0.04); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 8px; padding: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--text-muted);">
+                            <span><i class="fa-solid fa-user-shield" style="color: var(--accent-warning);"></i> HARDENING CIS</span>
+                            <span id="metricValCis" style="font-weight: 700; color: var(--accent-warning); font-family: 'JetBrains Mono', monospace;">100%</span>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.08); border-radius: 4px; height: 6px; width: 100%; margin: 0.45rem 0; overflow: hidden;">
+                            <div id="metricBarCis" style="background: var(--accent-warning); height: 100%; width: 100%; transition: width 0.4s ease;"></div>
+                        </div>
+                        <div id="metricStatsCis" style="font-size: 0.62rem; color: var(--text-muted); display: flex; justify-content: space-between;">
+                            <span>Conformidade: <b style="color:var(--accent-green);">ÓTIMA</b></span>
+                        </div>
+                    </div>
+
+                    <!-- Card Rede Conexões -->
+                    <div style="background: rgba(0, 240, 255, 0.04); border: 1px solid rgba(0, 240, 255, 0.25); border-radius: 8px; padding: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; color: var(--text-muted);">
+                            <span><i class="fa-solid fa-network-wired" style="color: var(--accent-cyan);"></i> CONEXÕES REDE</span>
+                            <span id="metricValConns" style="font-weight: 700; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace;">0</span>
+                        </div>
+                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.6rem;">
+                            IPs Banidos: <b id="metricValBanned" style="color: var(--accent-red);">0 IPs</b>
+                        </div>
+                    </div>
+
+                    <!-- Card Alarmes Ativos -->
+                    <div style="background: rgba(239, 68, 68, 0.04); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 8px; padding: 0.75rem; text-align: center;">
+                        <div style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">ALARMES ATIVOS</div>
+                        <div id="functionsAlarmsCount" style="font-size: 1.4rem; font-weight: 800; color: var(--accent-green); font-family: 'JetBrains Mono', monospace; margin-top: 0.2rem;">0 OK</div>
+                        <div style="font-size: 0.62rem; color: var(--text-muted); margin-top: 0.25rem;">Trigger Watcher</div>
+                    </div>
+                </div>
+
+                <!-- 2. GRÁFICO INTERATIVO DE TENDÊNCIAS EM TEMPO REAL (CHART.JS) -->
                 <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.9rem; margin-bottom: 1rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
-                        <div style="font-size: 0.85rem; font-weight: 700; color: #fff;">
+                        <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">
+                            <i class="fa-solid fa-chart-line" style="color: var(--accent-cyan);"></i> Gráfico de Séries Temporais em Tempo Real
+                        </div>
+                        <div style="display: flex; gap: 0.3rem; flex-wrap: wrap;">
+                            <button onclick="setChartMetricFilter('system.cpu.util')" class="btn-action" id="btnChartCpu" style="padding: 0.25rem 0.55rem; font-size: 0.68rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);">💻 CPU</button>
+                            <button onclick="setChartMetricFilter('system.memory.util')" class="btn-action" id="btnChartRam" style="padding: 0.25rem 0.55rem; font-size: 0.68rem; color: var(--accent-green); border-color: rgba(16, 185, 129, 0.4);">🧠 Memória</button>
+                            <button onclick="setChartMetricFilter('sentinel.ztna.risk_score')" class="btn-action" id="btnChartZtna" style="padding: 0.25rem 0.55rem; font-size: 0.68rem; color: var(--accent-purple); border-color: rgba(168, 85, 247, 0.4);">🛡️ ZTNA</button>
+                            <button onclick="setChartMetricFilter('system.net.connections')" class="btn-action" id="btnChartNet" style="padding: 0.25rem 0.55rem; font-size: 0.68rem; color: var(--accent-warning); border-color: rgba(245, 158, 11, 0.4);">🌐 Rede</button>
+                            <button onclick="setChartMetricFilter('all')" class="btn-action" id="btnChartAll" style="padding: 0.25rem 0.55rem; font-size: 0.68rem;">📈 Todos</button>
+                        </div>
+                    </div>
+                    <div style="position: relative; height: 180px; width: 100%;">
+                        <canvas id="telemetryChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 3. TABELA AMIGÁVEL DE PARÂMETROS E MÉTRICAS (ESTRUTURADA) -->
+                <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.9rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                        <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">
+                            <i class="fa-solid fa-table-list" style="color: var(--accent-warning);"></i> Parâmetros Disponíveis no Sentinela (Clique para usar)
+                        </div>
+                        <span style="font-size: 0.68rem; color: var(--text-muted);"><i class="fa-solid fa-circle-info"></i> Clique no botão "Usar" para montar expressões instantâneas</span>
+                    </div>
+                    <div id="telemetryMetricsTableContainer" style="max-height: 170px; overflow-y: auto;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 0.75rem; text-align: left;">
+                            <thead>
+                                <tr style="border-bottom: 1px solid var(--border-color); color: var(--text-muted);">
+                                    <th style="padding: 0.4rem;">Parâmetro (Item ID)</th>
+                                    <th style="padding: 0.4rem;">Nome da Métrica</th>
+                                    <th style="padding: 0.4rem;">Último Valor</th>
+                                    <th style="padding: 0.4rem;">Variação (Mín / Méd / Máx)</th>
+                                    <th style="padding: 0.4rem; text-align: right;">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody id="telemetryMetricsTableBody">
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 1rem;">Carregando métricas...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 4. PAINEL DO TRIGGER WATCH DAEMON (MONITORAMENTO CONTÍNUO) -->
+                <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.9rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; gap: 0.5rem;">
+                        <div style="font-size: 0.82rem; font-weight: 700; color: #fff;">
                             <i class="fa-solid fa-tower-broadcast" style="color: var(--accent-red);"></i> Regras em Monitoramento Contínuo (Trigger Watcher Daemon)
                         </div>
-                        <div style="display: flex; gap: 0.4rem;">
-                            <button onclick="collectFunctionsTelemetry()" class="btn-action" style="padding: 0.3rem 0.6rem; font-size: 0.72rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);" title="Forçar ciclo de telemetria dos 20 motores">
-                                <i class="fa-solid fa-arrows-rotate"></i> Sincronizar Telemetria
-                            </button>
-                            <button onclick="toggleRegisterRuleForm()" class="btn-action" style="padding: 0.3rem 0.6rem; font-size: 0.72rem; color: var(--accent-warning); border-color: rgba(245, 158, 11, 0.4);">
-                                <i class="fa-solid fa-plus"></i> Nova Regra
-                            </button>
-                        </div>
+                        <button onclick="toggleRegisterRuleForm()" class="btn-action" style="padding: 0.25rem 0.6rem; font-size: 0.7rem; color: var(--accent-warning); border-color: rgba(245, 158, 11, 0.4);">
+                            <i class="fa-solid fa-plus"></i> Nova Regra
+                        </button>
                     </div>
                     
                     <div id="newRuleFormContainer" style="display: none; background: #0b0f1a; border: 1px dashed var(--border-color); border-radius: 6px; padding: 0.8rem; margin-bottom: 0.8rem;">
@@ -2208,44 +2322,49 @@
                         </div>
                     </div>
 
-                    <div id="functionsRulesList" style="max-height: 160px; overflow-y: auto;">
-                        <div style="text-align: center; color: var(--text-muted); padding: 0.8rem; font-size: 0.75rem;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando regras…</div>
+                    <div id="functionsRulesList" style="max-height: 140px; overflow-y: auto;">
+                        <div style="text-align: center; color: var(--text-muted); padding: 0.6rem; font-size: 0.75rem;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando regras…</div>
                     </div>
                 </div>
 
-                <!-- CALCULADORA DE EXPRESSÕES E PRESETS -->
-                <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #fff; margin-bottom: 0.6rem;"><i class="fa-solid fa-calculator" style="color: var(--accent-warning);"></i> Calculadora de Expressões & Triggers</div>
+                <!-- 5. CALCULADORA DE EXPRESSÕES E PRESETS -->
+                <div style="background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.9rem; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                        <div style="font-size: 0.82rem; font-weight: 700; color: #fff;"><i class="fa-solid fa-calculator" style="color: var(--accent-warning);"></i> Calculadora de Expressões & Triggers</div>
+                        <div style="display: flex; gap: 0.3rem;">
+                            <button onclick="insertFuncTemplate('last')" class="btn-action" style="padding: 0.2rem 0.45rem; font-size: 0.65rem;" title="Valor mais recente">last()</button>
+                            <button onclick="insertFuncTemplate('avg')" class="btn-action" style="padding: 0.2rem 0.45rem; font-size: 0.65rem;" title="Média móvel">avg()</button>
+                            <button onclick="insertFuncTemplate('max')" class="btn-action" style="padding: 0.2rem 0.45rem; font-size: 0.65rem;" title="Valor máximo">max()</button>
+                            <button onclick="insertFuncTemplate('change')" class="btn-action" style="padding: 0.2rem 0.45rem; font-size: 0.65rem;" title="Diferença delta">change()</button>
+                            <button onclick="insertFuncTemplate('forecast')" class="btn-action" style="padding: 0.2rem 0.45rem; font-size: 0.65rem;" title="Projeção futura">forecast()</button>
+                        </div>
+                    </div>
+
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                        <select id="functionsPresetSelect" onchange="applyFunctionsPreset(this.value)" style="background: #0b0f1a; border: 1px solid var(--border-color); color: var(--accent-cyan); border-radius: 6px; padding: 0.55rem 0.8rem; font-size: 0.8rem;">
+                        <select id="functionsPresetSelect" onchange="applyFunctionsPreset(this.value)" style="background: #0b0f1a; border: 1px solid var(--border-color); color: var(--accent-cyan); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.78rem;">
                             <option value="">Biblioteca de Presets…</option>
                         </select>
-                        <input type="text" id="functionsExpression" placeholder='Ex: last("sentinel.ztna.risk_score") >= 75' style="flex: 1; min-width: 260px; background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.55rem 0.8rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; outline: none;">
-                        <button onclick="runFunctionsEvaluate()" class="btn-action btn-action-primary" style="padding: 0.55rem 1rem;">
+                        <input type="text" id="functionsExpression" placeholder='Ex: last("sentinel.ztna.risk_score") >= 75' style="flex: 1; min-width: 240px; background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.5rem 0.7rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; outline: none;">
+                        <button onclick="runFunctionsEvaluate()" class="btn-action btn-action-primary" style="padding: 0.5rem 0.9rem; font-size: 0.75rem;">
                             <i class="fa-solid fa-play"></i> Avaliar
                         </button>
-                        <button onclick="runFunctionsTrigger()" class="btn-action" style="padding: 0.55rem 1rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);">
+                        <button onclick="runFunctionsTrigger()" class="btn-action" style="padding: 0.5rem 0.9rem; font-size: 0.75rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);">
                             <i class="fa-solid fa-bolt"></i> Trigger
                         </button>
                     </div>
-                    <div id="functionsExpressionResult" style="margin-top: 0.7rem; font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; min-height: 2rem; color: var(--text-muted); white-space: pre-wrap;"></div>
+                    <div id="functionsExpressionResult" style="margin-top: 0.6rem; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; min-height: 1.8rem; color: var(--text-muted); white-space: pre-wrap;"></div>
                 </div>
-<!-- DIRETÓRIO DE FUNÇÕES -->
-                <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.6rem; flex-wrap: wrap;">
-                    <div style="font-size: 0.85rem; font-weight: 700; color: #fff;"><i class="fa-solid fa-book-open" style="color: var(--accent-cyan);"></i> Diretório de Funções</div>
-                    <select id="functionsCategoryFilter" onchange="loadFunctionsList()" style="background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.35rem 0.6rem; font-size: 0.75rem;">
+
+                <!-- 6. DIRETÓRIO DE FUNÇÕES NATIVAS -->
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap;">
+                    <div style="font-size: 0.82rem; font-weight: 700; color: #fff;"><i class="fa-solid fa-book-open" style="color: var(--accent-cyan);"></i> Catálogo de 124 Funções (Padrão Zabbix 7.0)</div>
+                    <select id="functionsCategoryFilter" onchange="loadFunctionsList()" style="background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.72rem;">
                         <option value="">Todas as Categorias</option>
                     </select>
-                    <input type="text" id="functionsSearch" placeholder="Buscar função…" oninput="debounceFunctionsList()" style="flex: 1; min-width: 150px; background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.35rem 0.6rem; font-size: 0.75rem; outline: none;">
-                    <button onclick="loadFunctionsDemoData()" class="btn-action" style="padding: 0.35rem 0.7rem; font-size: 0.72rem; color: var(--accent-green); border-color: rgba(16, 185, 129, 0.4);" title="Carregar métricas de demonstração no buffer">
-                        <i class="fa-solid fa-flask"></i> Demo Métricas
-                    </button>
-                    <button onclick="loadFunctionsItems()" class="btn-action" style="padding: 0.35rem 0.7rem; font-size: 0.72rem; color: var(--accent-cyan); border-color: rgba(0, 240, 255, 0.4);" title="Listar itens no buffer">
-                        <i class="fa-solid fa-database"></i> Itens
-                    </button>
+                    <input type="text" id="functionsSearch" placeholder="Buscar função por nome ou descrição…" oninput="debounceFunctionsList()" style="flex: 1; min-width: 140px; background: #0b0f1a; border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.3rem 0.5rem; font-size: 0.72rem; outline: none;">
                 </div>
-                <div id="functionsCatalog" style="max-height: 340px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 0.55rem; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.8rem; background: rgba(255,255,255,0.01);">
-                    <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1 / -1;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando diretório de funções…</div>
+                <div id="functionsCatalog" style="max-height: 220px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.5rem; border: 1px solid var(--border-color); border-radius: 8px; padding: 0.7rem; background: rgba(255,255,255,0.01);">
+                    <div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1 / -1;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando catálogo de funções…</div>
                 </div>
             </div>
             <div class="modal-footer">
@@ -4188,217 +4307,325 @@
         loadFunctionsStatus();
         setInterval(loadFunctionsStatus, 6000);
 
-        // --- FUNCTIONS ENGINE (MOTOR DE EXPRESSÕES DE MONITORAMENTO) ---
+        // --- FUNCTIONS ENGINE & LIVE TELEMETRY OBSERVABILITY ---
         let _functionsDebounce = null;
+        let _telemetryChart = null;
+        let _telemetryRefreshTimer = null;
+        let _currentChartFilter = 'system.cpu.util';
+        let _lastTelemetrySummary = null;
 
         function openFunctionsModal() {
             document.getElementById('functionsModal').style.display = 'flex';
-            loadFunctionsStatus();
+            loadTelemetryDashboardData();
             loadFunctionsList();
             loadFunctionsPresets();
             loadFunctionsAlarms();
+            
+            // Inicia atualização contínua em tempo real (a cada 3.5 segundos enquanto aberto)
+            if (_telemetryRefreshTimer) clearInterval(_telemetryRefreshTimer);
+            _telemetryRefreshTimer = setInterval(() => {
+                loadTelemetryDashboardData();
+                loadFunctionsAlarms();
+            }, 3500);
         }
 
         function closeFunctionsModal() {
             document.getElementById('functionsModal').style.display = 'none';
+            if (_telemetryRefreshTimer) {
+                clearInterval(_telemetryRefreshTimer);
+                _telemetryRefreshTimer = null;
+            }
         }
 
-        async function loadFunctionsStatus() {
+        async function loadTelemetryDashboardData() {
             try {
-                const res = await fetch('/api/functions/status');
+                const res = await fetch('/api/functions/telemetry/summary');
                 const data = await res.json();
-                if (!data || data.status !== 'success') return;
+                if (data.status !== 'success' || !data.metrics) return;
 
-                const elCount = document.getElementById('functionsCount');
-                if (elCount) elCount.innerText = data.total_functions;
-                const elCat = document.getElementById('functionsCategories');
-                if (elCat) elCat.innerText = (data.categories || []).join(', ') || '—';
-                const elItems = document.getElementById('functionsItemsCount');
-                if (elItems) elItems.innerText = data.items_count;
+                _lastTelemetrySummary = data.metrics;
+                const m = data.metrics;
 
-                const badge = document.getElementById('functionsEngineBadge');
-                if (badge) badge.innerText = data.total_functions;
-
-                const sel = document.getElementById('functionsCategoryFilter');
-                if (sel && sel.options.length <= 1) {
-                    (data.categories || []).forEach(c => {
-                        const opt = document.createElement('option');
-                        opt.value = c;
-                        opt.innerText = c;
-                        sel.appendChild(opt);
-                    });
+                // 1. Atualizar Cartões e Barras Visuais
+                // CPU
+                if (m['system.cpu.util']) {
+                    const c = m['system.cpu.util'];
+                    const valEl = document.getElementById('metricValCpu');
+                    const barEl = document.getElementById('metricBarCpu');
+                    const statsEl = document.getElementById('metricStatsCpu');
+                    if (valEl) valEl.innerText = `${c.last}%`;
+                    if (barEl) {
+                        barEl.style.width = `${Math.min(100, Math.max(0, c.last))}%`;
+                        barEl.style.background = c.last > 85 ? 'var(--accent-red)' : (c.last > 65 ? 'var(--accent-warning)' : 'var(--accent-cyan)');
+                    }
+                    if (statsEl) statsEl.innerHTML = `<span>Mín: ${c.min}%</span><span>Méd: ${c.avg}%</span><span>Máx: ${c.max}%</span>`;
                 }
-            } catch (err) {
-                console.error('Erro ao carregar status do Functions Engine:', err);
-            }
-        }
 
-        function debounceFunctionsList() {
-            clearTimeout(_functionsDebounce);
-            _functionsDebounce = setTimeout(loadFunctionsList, 350);
-        }
-
-        async function loadFunctionsList() {
-            const container = document.getElementById('functionsCatalog');
-            if (!container) return;
-            const cat = document.getElementById('functionsCategoryFilter').value;
-            const search = document.getElementById('functionsSearch').value.trim();
-            const params = new URLSearchParams();
-            if (cat) params.append('category', cat);
-            if (search) params.append('search', search);
-
-            container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1 / -1;"><i class="fa-solid fa-spinner fa-spin"></i> Carregando funções…</div>`;
-            try {
-                const res = await fetch(`/api/functions/list?${params.toString()}`);
-                const data = await res.json();
-                const funcs = data.functions || [];
-                if (funcs.length === 0) {
-                    container.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 1.5rem; grid-column: 1 / -1;">Nenhuma função encontrada.</div>`;
-                    return;
+                // RAM
+                if (m['system.memory.util']) {
+                    const r = m['system.memory.util'];
+                    const valEl = document.getElementById('metricValRam');
+                    const barEl = document.getElementById('metricBarRam');
+                    const statsEl = document.getElementById('metricStatsRam');
+                    if (valEl) valEl.innerText = `${r.last}%`;
+                    if (barEl) {
+                        barEl.style.width = `${Math.min(100, Math.max(0, r.last))}%`;
+                        barEl.style.background = r.last > 85 ? 'var(--accent-red)' : 'var(--accent-green)';
+                    }
+                    if (statsEl) statsEl.innerHTML = `<span>Mín: ${r.min}%</span><span>Méd: ${r.avg}%</span><span>Máx: ${r.max}%</span>`;
                 }
-                container.innerHTML = funcs.map(f =>
-                    `<div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.6rem 0.75rem;">
-                        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 700; color: var(--accent-warning);">${f.name}</div>
-                        <div style="font-size: 0.68rem; color: var(--accent-cyan); margin: 0.15rem 0;">${f.category}</div>
-                        <div style="font-size: 0.68rem; color: var(--text-muted); line-height: 1.3;">${f.description || ''}</div>
-                        <div style="font-size: 0.65rem; color: var(--text-muted); margin-top: 0.25rem;">params: ${(f.params || []).join(', ') || '—'}</div>
-                    </div>`
-                ).join('');
-            } catch (err) {
-                container.innerHTML = `<div style="color: var(--accent-red); padding: 1.5rem; text-align: center; grid-column: 1 / -1;">Falha ao carregar funções: ${err}</div>`;
-            }
-        }
 
-        function setFunctionsResult(html, color) {
-            const el = document.getElementById('functionsExpressionResult');
-            if (!el) return;
-            el.innerHTML = html;
-            el.style.color = color || 'var(--text-muted)';
-        }
-
-        async function runFunctionsEvaluate() {
-            const expr = document.getElementById('functionsExpression').value.trim();
-            if (!expr) { setFunctionsResult('⚠️ Informe uma expressão. Ex: last("system.cpu.util")', 'var(--accent-warning)'); return; }
-            try {
-                const res = await fetch('/api/functions/evaluate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ expression: expr })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    let val = data.result;
-                    if (val && typeof val === 'object') val = JSON.stringify(val, null, 2);
-                    setFunctionsResult(`🟢 Resultado: ${val}`, 'var(--accent-green)');
-                } else {
-                    setFunctionsResult(`🔴 ${data.error || data.message || 'Erro'}`, 'var(--accent-red)');
+                // ZTNA CARTA
+                if (m['sentinel.ztna.risk_score']) {
+                    const z = m['sentinel.ztna.risk_score'];
+                    const valEl = document.getElementById('metricValZtna');
+                    const barEl = document.getElementById('metricBarZtna');
+                    const statsEl = document.getElementById('metricStatsZtna');
+                    if (valEl) valEl.innerText = `${z.last} pts`;
+                    if (barEl) {
+                        barEl.style.width = `${Math.min(100, Math.max(0, z.last))}%`;
+                        barEl.style.background = z.last > 70 ? 'var(--accent-red)' : (z.last > 30 ? 'var(--accent-warning)' : 'var(--accent-purple)');
+                    }
+                    const postureName = z.last >= 75 ? '<b style="color:var(--accent-red);">QUARANTINED</b>' : (z.last >= 30 ? '<b style="color:var(--accent-warning);">MONITORED</b>' : '<b style="color:var(--accent-green);">TRUSTED</b>');
+                    if (statsEl) statsEl.innerHTML = `<span>Postura: ${postureName}</span><span>Pico: ${z.max} pts</span>`;
                 }
-            } catch (err) {
-                setFunctionsResult(`🔴 Erro de requisição: ${err}`, 'var(--accent-red)');
-            }
-        }
 
-        async function runFunctionsTrigger() {
-            const expr = document.getElementById('functionsExpression').value.trim();
-            if (!expr) { setFunctionsResult('⚠️ Informe uma trigger. Ex: last("system.cpu.util") > 80', 'var(--accent-warning)'); return; }
-            try {
-                const res = await fetch('/api/functions/trigger', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ expression: expr })
-                });
-                const data = await res.json();
-                if (data.status === 'success') {
-                    const fired = data.fired;
-                    setFunctionsResult(
-                        fired
-                            ? `🚨 TRIGGER DISPARADA — ${expr}`
-                            : `✅ OK — ${expr} (não disparada)`,
-                        fired ? 'var(--accent-red)' : 'var(--accent-green)'
-                    );
-                } else {
-                    setFunctionsResult(`🔴 ${data.error || data.message || 'Erro'}`, 'var(--accent-red)');
+                // Hardening CIS
+                if (m['sentinel.posture.hardening_score']) {
+                    const h = m['sentinel.posture.hardening_score'];
+                    const valEl = document.getElementById('metricValCis');
+                    const barEl = document.getElementById('metricBarCis');
+                    const statsEl = document.getElementById('metricStatsCis');
+                    if (valEl) valEl.innerText = `${h.last}%`;
+                    if (barEl) {
+                        barEl.style.width = `${Math.min(100, Math.max(0, h.last))}%`;
+                        barEl.style.background = h.last < 70 ? 'var(--accent-red)' : (h.last < 85 ? 'var(--accent-warning)' : 'var(--accent-green)');
+                    }
+                    const confLabel = h.last >= 90 ? '<b style="color:var(--accent-green);">EXCELENTE</b>' : (h.last >= 75 ? '<b style="color:var(--accent-warning);">ADEQUADA</b>' : '<b style="color:var(--accent-red);">DEGRADADA</b>');
+                    if (statsEl) statsEl.innerHTML = `<span>Conformidade: ${confLabel}</span>`;
                 }
-            } catch (err) {
-                setFunctionsResult(`🔴 Erro de requisição: ${err}`, 'var(--accent-red)');
-            }
-        }
 
-        async function loadFunctionsDemoData() {
-            try {
-                const res = await fetch('/api/functions/metrics/demo', { method: 'POST' });
-                const data = await res.json();
-                alert(`🧪 ${data.message}\nItens no buffer: ${data.items_count}`);
-                loadFunctionsStatus();
-                loadFunctionsItems();
-            } catch (err) {
-                alert('Erro ao carregar métricas de demonstração: ' + err);
-            }
-        }
-
-        async function loadFunctionsItems() {
-            try {
-                const res = await fetch('/api/functions/items?limit=150');
-                const data = await res.json();
-                const items = data.items || [];
-                if (items.length === 0) {
-                    setFunctionsResult('📦 Buffer vazio. Use "Demo Métricas" para popular.', 'var(--text-muted)');
-                    return;
+                // Conexões
+                if (m['system.net.connections']) {
+                    const n = m['system.net.connections'];
+                    const valEl = document.getElementById('metricValConns');
+                    if (valEl) valEl.innerText = `${n.last} ativas`;
                 }
-                const agg = {};
-                items.forEach(it => { agg[it.item_id] = (agg[it.item_id] || 0) + 1; });
-                const rows = Object.keys(agg).map(k =>
-                    `<div style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;padding:0.25rem 0;">
-                        <span style="color: var(--accent-cyan);">${k}</span>
-                        <span style="color: var(--text-muted);"> — ${agg[k]} pontos</span>
-                    </div>`
-                ).join('');
-                setFunctionsResult(`📦 Itens no buffer:\n${rows}`, 'var(--text-muted)');
-                loadFunctionsStatus();
-            } catch (err) {
-                setFunctionsResult('🔴 Erro ao listar itens: ' + err, 'var(--accent-red)');
-            }
-        }
 
-        async function loadFunctionsPresets() {
-            const sel = document.getElementById('functionsPresetSelect');
-            if (!sel || sel.options.length > 1) return;
-            try {
-                const res = await fetch('/api/functions/presets');
-                const data = await res.json();
-                if (data.status === 'success' && data.presets) {
-                    data.presets.forEach(p => {
-                        const opt = document.createElement('option');
-                        opt.value = p.expression;
-                        opt.innerText = `[${p.severity}] ${p.name}`;
-                        opt.title = p.description;
-                        sel.appendChild(opt);
-                    });
+                // IPs Banidos
+                if (m['sentinel.banned_ips.count']) {
+                    const b = m['sentinel.banned_ips.count'];
+                    const valEl = document.getElementById('metricValBanned');
+                    if (valEl) valEl.innerText = `${b.last} IPs`;
                 }
+
+                // 2. Atualizar Tabela de Parâmetros
+                renderTelemetryMetricsTable(m);
+
+                // 3. Atualizar Gráfico Chart.js
+                renderTelemetryChart(m);
+
             } catch (err) {
-                console.error('Erro ao carregar presets do Functions Engine:', err);
+                console.error('Erro ao atualizar telemetria operacional:', err);
             }
         }
 
-        function applyFunctionsPreset(val) {
-            if (!val) return;
+        function renderTelemetryMetricsTable(metrics) {
+            const tbody = document.getElementById('telemetryMetricsTableBody');
+            if (!tbody) return;
+
+            const rows = Object.values(metrics).map(m => {
+                const iconHtml = `<i class="fa-solid ${m.icon || 'fa-chart-line'}" style="color: var(--accent-cyan); margin-right: 5px;"></i>`;
+                return `<tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 0.45rem; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--accent-cyan); font-weight: 600;">
+                        ${m.item_id}
+                    </td>
+                    <td style="padding: 0.45rem; color: #fff;">
+                        ${iconHtml} ${m.name}
+                    </td>
+                    <td style="padding: 0.45rem; font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--accent-warning);">
+                        ${m.last} ${m.unit}
+                    </td>
+                    <td style="padding: 0.45rem; color: var(--text-muted); font-size: 0.7rem;">
+                        Mín: <b style="color:#fff;">${m.min}</b> | Méd: <b style="color:#fff;">${m.avg}</b> | Máx: <b style="color:#fff;">${m.max}</b>
+                    </td>
+                    <td style="padding: 0.45rem; text-align: right;">
+                        <button onclick="setChartMetricFilter('${m.item_id}')" class="btn-action" style="padding: 0.2rem 0.5rem; font-size: 0.65rem; color: var(--accent-cyan); border-color: rgba(0,240,255,0.3); margin-right: 0.3rem;" title="Ver curva no gráfico">
+                            <i class="fa-solid fa-chart-area"></i>
+                        </button>
+                        <button onclick="useMetricInCalc('${m.item_id}')" class="btn-action btn-action-primary" style="padding: 0.2rem 0.55rem; font-size: 0.65rem;" title="Usar na calculadora">
+                            <i class="fa-solid fa-arrow-down"></i> Usar
+                        </button>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            tbody.innerHTML = rows || '<tr><td colspan="5" style="text-align:center; padding: 1rem; color: var(--text-muted);">Nenhuma métrica coletada ainda. Clique em "Sincronizar Agora".</td></tr>';
+        }
+
+        function setChartMetricFilter(metricKey) {
+            _currentChartFilter = metricKey;
+            
+            // Destacar botão ativo
+            const buttons = [
+                { id: 'btnChartCpu', key: 'system.cpu.util' },
+                { id: 'btnChartRam', key: 'system.memory.util' },
+                { id: 'btnChartZtna', key: 'sentinel.ztna.risk_score' },
+                { id: 'btnChartNet', key: 'system.net.connections' },
+                { id: 'btnChartAll', key: 'all' }
+            ];
+            buttons.forEach(b => {
+                const el = document.getElementById(b.id);
+                if (el) {
+                    if (b.key === metricKey) {
+                        el.style.fontWeight = '700';
+                        el.style.boxShadow = '0 0 8px rgba(0, 240, 255, 0.4)';
+                    } else {
+                        el.style.fontWeight = 'normal';
+                        el.style.boxShadow = 'none';
+                    }
+                }
+            });
+
+            if (_lastTelemetrySummary) {
+                renderTelemetryChart(_lastTelemetrySummary);
+            }
+        }
+
+        function useMetricInCalc(itemId) {
             const input = document.getElementById('functionsExpression');
-            if (input) input.value = val;
-        }
-
-        async function collectFunctionsTelemetry() {
-            try {
-                const res = await fetch('/api/functions/collect', { method: 'POST' });
-                const data = await res.json();
-                alert(`🌐 ${data.message}\nTotal de métricas armazenadas: ${data.total_items}`);
-                loadFunctionsStatus();
-                loadFunctionsAlarms();
-            } catch (err) {
-                alert('Erro ao sincronizar telemetria: ' + err);
+            if (input) {
+                input.value = `last("${itemId}")`;
+                input.focus();
             }
         }
 
-        async function loadFunctionsAlarms() {
+        function insertFuncTemplate(fnName) {
+            const input = document.getElementById('functionsExpression');
+            if (!input) return;
+            const cur = input.value.trim();
+            const itemId = cur.includes('"') ? cur.split('"')[1] : 'system.cpu.util';
+
+            if (fnName === 'last') input.value = `last("${itemId}")`;
+            else if (fnName === 'avg') input.value = `avg("${itemId}", 300)`;
+            else if (fnName === 'max') input.value = `max("${itemId}", 60)`;
+            else if (fnName === 'change') input.value = `change("${itemId}")`;
+            else if (fnName === 'forecast') input.value = `forecast("${itemId}", 3600)`;
+            input.focus();
+        }
+
+        function renderTelemetryChart(metrics) {
+            const canvas = document.getElementById('telemetryChart');
+            if (!canvas) return;
+
+            if (typeof Chart === 'undefined') {
+                console.warn('Chart.js ainda não foi carregado pelo CDN.');
+                return;
+            }
+
+            const palette = {
+                'system.cpu.util': { label: 'CPU Host (%)', color: '#00f0ff', bg: 'rgba(0, 240, 255, 0.1)' },
+                'system.memory.util': { label: 'RAM Host (%)', color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
+                'sentinel.ztna.risk_score': { label: 'Risco ZTNA (pts)', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' },
+                'sentinel.posture.hardening_score': { label: 'Hardening CIS (%)', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
+                'system.net.connections': { label: 'Conexões de Rede', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },
+                'sentinel.banned_ips.count': { label: 'IPs Banidos', color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' }
+            };
+
+            let targetKeys = [];
+            if (_currentChartFilter === 'all') {
+                targetKeys = ['system.cpu.util', 'system.memory.util', 'sentinel.ztna.risk_score', 'system.net.connections'];
+            } else if (metrics[_currentChartFilter]) {
+                targetKeys = [_currentChartFilter];
+            } else {
+                targetKeys = Object.keys(metrics).slice(0, 3);
+            }
+
+            // Gerar labels de timestamp a partir do histórico da primeira métrica disponível
+            let labels = [];
+            for (const k of targetKeys) {
+                if (metrics[k] && metrics[k].history && metrics[k].history.length > 0) {
+                    labels = metrics[k].history.map(pt => {
+                        const d = new Date(pt.timestamp * 1000);
+                        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+                    });
+                    break;
+                }
+            }
+
+            // Se não houver histórico de pontos, criar timestamps artificiais
+            if (labels.length === 0) {
+                labels = ['T-4m', 'T-3m', 'T-2m', 'T-1m', 'Agora'];
+            }
+
+            const datasets = [];
+            targetKeys.forEach(k => {
+                const item = metrics[k];
+                if (!item) return;
+                const p = palette[k] || { label: item.name, color: '#00f0ff', bg: 'rgba(0, 240, 255, 0.1)' };
+                
+                let dataPts = [];
+                if (item.history && item.history.length > 0) {
+                    dataPts = item.history.map(pt => pt.value);
+                } else {
+                    dataPts = [item.last];
+                }
+
+                datasets.push({
+                    label: p.label,
+                    data: dataPts,
+                    borderColor: p.color,
+                    backgroundColor: p.bg,
+                    fill: targetKeys.length === 1,
+                    tension: 0.35,
+                    borderWidth: 2,
+                    pointRadius: dataPts.length > 20 ? 0 : 3,
+                    pointHoverRadius: 5
+                });
+            });
+
+            if (_telemetryChart) {
+                _telemetryChart.data.labels = labels;
+                _telemetryChart.data.datasets = datasets;
+                _telemetryChart.update('none'); // Update sem transições lentas
+            } else {
+                const ctx = canvas.getContext('2d');
+                _telemetryChart = new Chart(ctx, {
+                    type: 'line',
+                    data: { labels, datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: {
+                            legend: {
+                                display: targetKeys.length > 1,
+                                labels: { color: '#94a3b8', font: { size: 10, family: 'Inter' } }
+                            },
+                            tooltip: {
+                                backgroundColor: '#111622',
+                                titleColor: '#fff',
+                                bodyColor: '#94a3b8',
+                                borderColor: '#1e293b',
+                                borderWidth: 1,
+                                padding: 8
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(255,255,255,0.03)' },
+                                ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
+                            },
+                            y: {
+                                grid: { color: 'rgba(255,255,255,0.04)' },
+                                ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
+                            }
+                        }
+                    }
+                });
+            }
+        }
             const listEl = document.getElementById('functionsRulesList');
             const badgeEl = document.getElementById('functionsAlarmsCount');
             if (!listEl) return;

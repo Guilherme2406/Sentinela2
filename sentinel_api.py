@@ -1667,6 +1667,65 @@ def functions_items():
     }), 200
 
 
+@app.route("/api/functions/telemetry/summary", methods=["GET"])
+def get_telemetry_summary():
+    """Retorna sumário estruturado de todas as métricas no buffer (valores recentes, min, max, avg e série temporal para gráficos)."""
+    storage = functions_storage_instance
+    limit = int(request.args.get("limit") or 60)
+    item_ids = storage.item_ids()
+    result = {}
+
+    friendly_names = {
+        "system.cpu.util": {"name": "Uso de CPU do Host", "unit": "%", "icon": "fa-microchip"},
+        "system.memory.util": {"name": "Uso de Memória RAM", "unit": "%", "icon": "fa-memory"},
+        "system.processes.count": {"name": "Processos em Execução", "unit": "pids", "icon": "fa-list-check"},
+        "system.net.connections": {"name": "Conexões de Rede Ativas", "unit": "conns", "icon": "fa-network-wired"},
+        "sentinel.ztna.risk_score": {"name": "Score de Risco ZTNA CARTA", "unit": "pts", "icon": "fa-shield-halved"},
+        "sentinel.posture.hardening_score": {"name": "Conformidade de Postura CIS", "unit": "%", "icon": "fa-user-shield"},
+        "sentinel.banned_ips.count": {"name": "IPs Bloqueados no Firewall", "unit": "ips", "icon": "fa-ban"},
+        "sentinel.quarantine.files_count": {"name": "Arquivos em Quarentena", "unit": "arquivos", "icon": "fa-box-archive"},
+        "sentinel.fim.files_monitored": {"name": "Arquivos no FIM", "unit": "arquivos", "icon": "fa-file-shield"},
+        "sentinel.active_layers.count": {"name": "Camadas Soberanas Ativas", "unit": "camadas", "icon": "fa-layer-group"},
+        "sentinel.identity.threats_count": {"name": "Ameaças de Identidade", "unit": "ameaças", "icon": "fa-id-card-clip"},
+    }
+
+    for iid in item_ids:
+        raw_items = storage.query(iid, limit=limit)
+        if not raw_items:
+            continue
+        vals = [float(it.value) for it in raw_items if isinstance(it.value, (int, float))]
+        if not vals:
+            continue
+        last_val = vals[-1]
+        min_val = min(vals)
+        max_val = max(vals)
+        avg_val = round(sum(vals) / len(vals), 2)
+        
+        meta = friendly_names.get(iid, {"name": raw_items[-1].name or iid, "unit": "", "icon": "fa-chart-line"})
+
+        result[iid] = {
+            "item_id": iid,
+            "name": meta["name"],
+            "unit": meta["unit"],
+            "icon": meta["icon"],
+            "last": round(last_val, 2),
+            "min": round(min_val, 2),
+            "max": round(max_val, 2),
+            "avg": avg_val,
+            "points_count": len(raw_items),
+            "history": [
+                {"timestamp": it.timestamp, "value": it.value}
+                for it in raw_items
+            ]
+        }
+
+    return jsonify({
+        "status": "success",
+        "total_metrics": len(result),
+        "metrics": result,
+    }), 200
+
+
 @app.route("/api/functions/metrics/demo", methods=["POST"])
 def functions_metrics_demo():
     """Carrega métricas de demonstração (CPU, memória, rede, latência) no Functions Engine."""
