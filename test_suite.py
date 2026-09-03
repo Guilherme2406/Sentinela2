@@ -1203,7 +1203,7 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         self.assertEqual(res_std.status_code, 200)
         self.assertEqual(res_std.get_json().get("mode"), "STANDARD")
 
-        # 4. Consulta de Relatório Forense Executivo
+        # 4. Consulta de Relatório Forense Executivo (JSON)
         res_rep = self.client.get("/api/reports/forensic")
         self.assertEqual(res_rep.status_code, 200)
         rep_json = res_rep.get_json()
@@ -1211,6 +1211,12 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         self.assertIn("security_posture", rep_json)
         self.assertIn("integrity_sha256", rep_json)
         self.assertEqual(len(rep_json.get("integrity_sha256")), 64)
+
+        # 5. Consulta de Relatório Forense Executivo Pronto para PDF (HTML A4)
+        res_html = self.client.get("/api/reports/forensic/html")
+        self.assertEqual(res_html.status_code, 200)
+        self.assertIn(b"SENTINEL XDR", res_html.data)
+        self.assertIn(b"window.print()", res_html.data)
 
     def test_10_thread_watchdog_auto_healing(self):
         """Valida a capacidade de auto-cura (self-healing) do SentinelThreadWatchdog."""

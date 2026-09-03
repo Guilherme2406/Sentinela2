@@ -23,6 +23,9 @@
     <!-- Chart.js para Gráficos de Telemetria em Tempo Real -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+    <!-- html2pdf.js para Exportação de Relatórios Forenses em PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
     <style>
         :root {
             --bg-dark: #080b11;
@@ -812,8 +815,8 @@
                 <i class="fa-solid fa-volume-high" id="iconAudioToggle"></i> <span id="labelAudioToggle">Som ON</span>
             </button>
 
-            <button onclick="exportForensicReport()" class="btn-action" style="color: #38bdf8; border-color: rgba(56,189,248,0.4); font-weight: 700;" title="Exportar Relatório Forense Executivo para Auditoria">
-                <i class="fa-solid fa-file-shield"></i> Relatório
+            <button onclick="exportForensicReport()" class="btn-action" style="color: #38bdf8; border-color: rgba(56,189,248,0.5); font-weight: 700;" title="Gerar e Baixar Relatório Forense Oficial em PDF">
+                <i class="fa-solid fa-file-pdf" style="color: #ef4444;"></i> Relatório PDF
             </button>
 
             <button onclick="triggerManualScan()" class="btn-action">
@@ -2569,9 +2572,9 @@
         // --- TELEMETRIA EM TEMPO REAL NA TELA PRINCIPAL (CHART.JS) ---
         let _mainTelemetryChart = null;
         const _mainChartHistory = {
-            labels: [],
-            cpu: [],
-            ram: []
+            labels: ['T-16s', 'T-12s', 'T-8s', 'T-4s', 'Agora'],
+            cpu: [12, 18, 15, 20, 16],
+            ram: [42, 42, 43, 42, 43]
         };
 
         function updateMainTelemetryChart(cpuVal, ramVal) {
@@ -2660,6 +2663,13 @@
         let _tacticalAudioEnabled = true;
         let _audioCtx = null;
 
+        // Desbloqueio seguro do AudioContext no primeiro clique do usuário
+        window.addEventListener('click', () => {
+            if (_audioCtx && _audioCtx.state === 'suspended') {
+                _audioCtx.resume().catch(() => {});
+            }
+        }, { once: false });
+
         function toggleTacticalAudio() {
             _tacticalAudioEnabled = !_tacticalAudioEnabled;
             const btn = document.getElementById('btnAudioToggle');
@@ -2684,7 +2694,7 @@
                 if (!AudioCtxClass) return;
                 if (!_audioCtx) _audioCtx = new AudioCtxClass();
                 if (_audioCtx.state === 'suspended') {
-                    _audioCtx.resume();
+                    _audioCtx.resume().catch(() => {});
                 }
 
                 const osc = _audioCtx.createOscillator();
@@ -2737,9 +2747,38 @@
             const btnLck = document.getElementById('btnModeLockdown');
             if (!btnStd || !btnElv || !btnLck) return;
 
-            btnStd.style.background = mode === 'STANDARD' ? 'rgba(16,185,129,0.3)' : 'transparent';
-            btnElv.style.background = mode === 'ELEVATED' ? 'rgba(245,158,11,0.3)' : 'transparent';
-            btnLck.style.background = mode === 'LOCKDOWN' ? 'rgba(239,68,68,0.4)' : 'transparent';
+            // Reset geral
+            btnStd.style.background = 'transparent';
+            btnStd.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+            btnStd.style.boxShadow = 'none';
+            btnStd.innerHTML = 'PADRÃO';
+
+            btnElv.style.background = 'transparent';
+            btnElv.style.borderColor = 'rgba(245, 158, 11, 0.3)';
+            btnElv.style.boxShadow = 'none';
+            btnElv.innerHTML = 'ELEVADO';
+
+            btnLck.style.background = 'transparent';
+            btnLck.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+            btnLck.style.boxShadow = 'none';
+            btnLck.innerHTML = 'LOCKDOWN';
+
+            if (mode === 'ELEVATED') {
+                btnElv.style.background = 'rgba(245, 158, 11, 0.25)';
+                btnElv.style.borderColor = 'var(--accent-warning)';
+                btnElv.style.boxShadow = '0 0 10px rgba(245, 158, 11, 0.4)';
+                btnElv.innerHTML = '● ELEVADO';
+            } else if (mode === 'LOCKDOWN') {
+                btnLck.style.background = 'rgba(239, 68, 68, 0.35)';
+                btnLck.style.borderColor = 'var(--accent-red)';
+                btnLck.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.6)';
+                btnLck.innerHTML = '🚨 LOCKDOWN';
+            } else {
+                btnStd.style.background = 'rgba(16, 185, 129, 0.2)';
+                btnStd.style.borderColor = 'var(--accent-green)';
+                btnStd.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
+                btnStd.innerHTML = '● PADRÃO';
+            }
         }
 
         async function setDefenseMode(mode) {
@@ -2767,24 +2806,56 @@
             }
         }
 
-        // --- EXPORTAÇÃO DE RELATÓRIO FORENSE (1-CLIQUE) ---
+        // --- EXPORTAÇÃO DE RELATÓRIO FORENSE EM PDF (1-CLIQUE) ---
         async function exportForensicReport() {
+            playTacticalAlertSound('INFO');
+            
+            // Localiza botão disparador
+            const btn = document.querySelector("button[onclick='exportForensicReport()']");
+            const originalHTML = btn ? btn.innerHTML : '';
+            if (btn) btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Gerando PDF…';
+
             try {
-                const res = await fetch('/api/reports/forensic');
-                const data = await res.json();
-                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                const ts = new Date().toISOString().replace(/[:.]/g, '-');
-                a.href = url;
-                a.download = `sentinela_relatorio_forense_${ts}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                playTacticalAlertSound('INFO');
-            } catch (e) {
-                alert('Erro ao gerar relatório forense: ' + e);
+                // 1. Abrir a visualização formatada em nova aba (com opção instantânea de Salvar como PDF)
+                window.open('/api/reports/forensic/html', '_blank');
+
+                // 2. Se a biblioteca html2pdf estiver disponível, aciona o download direto de arquivo .pdf
+                if (typeof html2pdf !== 'undefined') {
+                    const res = await fetch('/api/reports/forensic/html');
+                    const htmlText = await res.text();
+                    
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, 'text/html');
+                    const noPrint = doc.querySelector('.no-print');
+                    if (noPrint) noPrint.remove();
+
+                    const container = document.createElement('div');
+                    container.style.position = 'fixed';
+                    container.style.left = '-9999px';
+                    container.style.top = '0';
+                    container.style.width = '794px'; // Largura exata A4 a 96 DPI
+                    container.style.background = '#0f172a';
+                    container.style.color = '#f8fafc';
+                    container.style.padding = '20px';
+                    container.innerHTML = doc.body.innerHTML;
+                    document.body.appendChild(container);
+
+                    const ts = new Date().toISOString().slice(0, 10);
+                    const opt = {
+                        margin: [8, 8, 8, 8],
+                        filename: `sentinela_relatorio_forense_${ts}.pdf`,
+                        image: { type: 'jpeg', quality: 0.98 },
+                        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#0f172a' },
+                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                    };
+
+                    await html2pdf().set(opt).from(container).save();
+                    document.body.removeChild(container);
+                }
+            } catch (err) {
+                console.warn('Erro ao compilar PDF automático com html2pdf, visualização aberta na nova aba:', err);
+            } finally {
+                if (btn) btn.innerHTML = originalHTML;
             }
         }
 

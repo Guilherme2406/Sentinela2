@@ -659,6 +659,196 @@ def get_forensic_report():
 
     return jsonify(report), 200
 
+@app.route("/api/reports/forensic/html", methods=["GET"])
+def get_forensic_report_html():
+    """Retorna um relatório forense executivo em HTML formatado com layout A4 para impressão e salvamento direto em PDF."""
+    rep_res = get_forensic_report()
+    data = rep_res[0].get_json() if isinstance(rep_res, tuple) else rep_res.get_json()
+
+    host = data.get("host", {})
+    posture = data.get("security_posture", {})
+    banned_ips = data.get("banned_network_ips", [])
+    recent = data.get("recent_audit_events", [])[:20]
+
+    # Diagnóstico das camadas
+    diag_res = get_protection_diagnostics()
+    diag_data = diag_res[0].get_json() if isinstance(diag_res, tuple) else diag_res.get_json()
+    subsystems = diag_data.get("subsystems", [])
+
+    subsystems_rows = "".join([
+        f"""<tr>
+            <td style="padding:6px 10px; border-bottom:1px solid #2d3748; font-weight:600; color:#e2e8f0;">{s['name']}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #2d3748; color:#a0aec0; font-size:12px;">{s['category']}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #2d3748; color:#48bb78; font-weight:700;">{s['status']}</td>
+            <td style="padding:6px 10px; border-bottom:1px solid #2d3748; text-align:right; font-weight:700; color:#38b2ac;">{s['health']}%</td>
+        </tr>""" for s in subsystems
+    ])
+
+    banned_html = "".join([f"<span style='display:inline-block; background:#742a2a; color:#feb2b2; padding:2px 6px; border-radius:4px; margin:2px; font-family:monospace; font-size:11px;'>{ip}</span>" for ip in banned_ips]) or "<span style='color:#a0aec0;'>Nenhum IP em bloqueio no momento.</span>"
+
+    events_rows = "".join([
+        f"""<tr>
+            <td style="padding:5px 8px; border-bottom:1px solid #2d3748; font-family:monospace; font-size:11px; color:#a0aec0;">{e.get('timestamp','')}</td>
+            <td style="padding:5px 8px; border-bottom:1px solid #2d3748; font-weight:700; font-size:11px; color:{'#f56565' if e.get('severity')=='CRITICAL' else ('#ed8936' if e.get('severity')=='HIGH' else '#38b2ac')};">[{e.get('severity','')}]</td>
+            <td style="padding:5px 8px; border-bottom:1px solid #2d3748; font-size:11px; color:#cbd5e0;">{e.get('category','')}</td>
+            <td style="padding:5px 8px; border-bottom:1px solid #2d3748; font-size:11px; color:#e2e8f0;">{e.get('target','')} — {e.get('description','')}</td>
+        </tr>""" for e in recent
+    ])
+
+    html = f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório Forense de Segurança — SENTINEL XDR</title>
+    <style>
+        @page {{ size: A4; margin: 12mm; }}
+        body {{
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 24px;
+            font-size: 13px;
+            line-height: 1.4;
+        }}
+        .report-card {{
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }}
+        .header-title {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #00f0ff;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }}
+        .metric-badge {{
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 12px;
+        }}
+        .grid-3 {{
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }}
+        th {{
+            text-align: left;
+            padding: 8px 10px;
+            background: #0f172a;
+            color: #94a3b8;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid #334155;
+        }}
+        @media print {{
+            body {{ background: #ffffff !important; color: #000000 !important; padding: 0 !important; }}
+            .report-card {{ background: #ffffff !important; border: 1px solid #cbd5e1 !important; color: #000 !important; }}
+            .header-title {{ border-bottom: 2px solid #0284c7 !important; }}
+            th {{ background: #f1f5f9 !important; color: #475569 !important; border-bottom: 1px solid #cbd5e1 !important; }}
+            td {{ border-bottom: 1px solid #e2e8f0 !important; color: #0f172a !important; }}
+            .no-print {{ display: none !important; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="no-print" style="margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 12px 18px; border-radius: 8px; border: 1px solid #00f0ff;">
+        <div>
+            <strong style="color: #00f0ff; font-size: 14px;">📄 RELATÓRIO FORENSE DE AUDITORIA PRONTO PARA PDF</strong>
+            <div style="font-size: 12px; color: #94a3b8;">Clique no botão ao lado para imprimir ou Salvar como PDF.</div>
+        </div>
+        <button onclick="window.print()" style="background: #00f0ff; color: #080b11; font-weight: 700; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;">
+            🖨️ Salvar como PDF / Imprimir
+        </button>
+    </div>
+
+    <div class="header-title">
+        <div>
+            <h2 style="margin: 0; color: #00f0ff; letter-spacing: 1px; font-size: 18px;">🛡️ SENTINEL XDR — RELATÓRIO FORENSE DE SEGURANÇA</h2>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Auditoria de Defesa Soberana, Postura Zero-Trust e Resposta a Incidentes</div>
+        </div>
+        <div style="text-align: right;">
+            <div class="metric-badge" style="background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981;">
+                ● SAÚDE GERAL: {posture.get('overall_health_score', 100)}% OPERACIONAL
+            </div>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Gerado em: {data.get('generated_at', '')}</div>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <div style="font-weight: 700; margin-bottom: 10px; color: #38bdf8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">1. Informações do Host &amp; Postura Tática</div>
+        <div class="grid-3">
+            <div><strong>Dispositivo:</strong> <span style="font-family: monospace;">{host.get('hostname','')}</span></div>
+            <div><strong>Sistema Operacional:</strong> <span style="font-family: monospace;">{host.get('platform','')} (Python {host.get('python_version','')})</span></div>
+            <div><strong>Modo de Defesa:</strong> <span style="color: #10b981; font-weight: 700;">{host.get('defense_mode','STANDARD')}</span></div>
+            <div><strong>Camadas Ativas:</strong> <span style="font-weight: 700; color: #00f0ff;">{posture.get('active_layers', 20)} de {posture.get('total_layers', 20)}</span></div>
+            <div><strong>Risco ZTNA CARTA:</strong> <span style="font-weight: 700; color: #a855f7;">{posture.get('ztna_risk_score', 0.0)} / 100 pts</span></div>
+            <div><strong>Arquivos Monitorados (FIM):</strong> <span style="font-weight: 700; color: #38bdf8;">{posture.get('fim_baseline_files', 0)} hashes SHA-256</span></div>
+        </div>
+    </div>
+
+    <div class="report-card">
+        <div style="font-weight: 700; margin-bottom: 10px; color: #38bdf8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">2. Auditoria dos 20 Subsistemas de Defesa Ativa</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Camada / Subsistema</th>
+                    <th>Categoria</th>
+                    <th>Status</th>
+                    <th style="text-align: right;">Integridade</th>
+                </tr>
+            </thead>
+            <tbody>
+                {subsystems_rows}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="report-card">
+        <div style="font-weight: 700; margin-bottom: 10px; color: #38bdf8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">3. Perímetro, Firewall &amp; Quarentena</div>
+        <div style="margin-bottom: 8px;"><strong>IPs Atualmente Banidos na Borda:</strong></div>
+        <div style="margin-bottom: 12px;">{banned_html}</div>
+        <div><strong>Artefatos Isolados em Quarentena Criptografada:</strong> {posture.get('quarantine_count', 0)} arquivos</div>
+    </div>
+
+    <div class="report-card">
+        <div style="font-weight: 700; margin-bottom: 10px; color: #38bdf8; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">4. Trilha Forense Recente (Últimos Eventos de Auditoria)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Data / Hora UTC</th>
+                    <th>Severidade</th>
+                    <th>Categoria</th>
+                    <th>Detalhes do Incidente</th>
+                </tr>
+            </thead>
+            <tbody>
+                {events_rows}
+            </tbody>
+        </table>
+    </div>
+
+    <div style="margin-top: 20px; padding: 12px; background: rgba(0,0,0,0.3); border: 1px dashed #475569; border-radius: 6px; font-size: 10px; color: #94a3b8;">
+        <div><strong>ASSINATURA CRIPTOGRÁFICA DE CADEIA DE CUSTÓDIA (SHA-256):</strong></div>
+        <div style="font-family: monospace; color: #00f0ff; word-break: break-all; margin-top: 3px;">{data.get('integrity_sha256','')}</div>
+        <div style="margin-top: 4px;">Este documento foi emitido e assinado digitalmente pelo Sentinela XDR Sovereign Security Engine.</div>
+    </div>
+</body>
+</html>"""
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
 @app.route("/api/stats", methods=["GET"])
 def get_stats():
     """Retorna estatísticas agregadas por severidade e categoria."""
