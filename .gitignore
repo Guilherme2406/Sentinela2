@@ -33,6 +33,10 @@ sentinel_events.db*
 sentinel_runtime.json
 sentinel_daemon.log
 
+# Estado do modo Multi-Host (config local do nó + estado do hub)
+multiagent_config.json
+multiagent_state/
+
 # Snapshots e modelos de IA gerados em tempo de execução
 sentinel_vault/snapshot_*/
 sentinel_vault/ai_isolation_forest.pkl

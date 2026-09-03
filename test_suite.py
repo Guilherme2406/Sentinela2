@@ -1278,5 +1278,157 @@ class TestPosturePersistenceGuard(unittest.TestCase):
                 os.remove(sample_path)
 
 
+class TestMultiAgentLayer(unittest.TestCase):
+    """Valida a camada Multi-Host XDR (hub central + agentes federados)."""
+
+    def setUp(self):
+        from flask import Flask
+        from multiagent import MultiAgentConfig, MultiAgentServer
+        self.temp_dir = tempfile.mkdtemp()
+        self.config = MultiAgentConfig(
+            role="hub",
+            agent_id="hub-test",
+            state_dir=os.path.join(self.temp_dir, "state"),
+            offline_timeout=20.0,
+            mass_offline_threshold=2,
+            incident_window=60.0,
+        )
+        self.flask_app = Flask(__name__)
+        self.server = MultiAgentServer(self.config)
+        self.server.init_app(self.flask_app)
+        self.client = self.flask_app.test_client()
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_01_bus_local_queue(self):
+        """Valida a fila thread-safe do barramento local do agente."""
+        from multiagent import MultiAgentEventBus
+        bus = MultiAgentEventBus(max_pending=5, flush_size=2)
+        for i in range(7):
+            bus.push("HIGH", "TEST", f"target-{i}", f"evento {i}")
+        self.assertEqual(bus.pending, 5)  # max_pending respeitado (descarta o mais antigo)
+        batch = bus.drain()
+        self.assertEqual(len(batch), 2)   # flush_size default
+        rest = bus.drain(100)
+        self.assertEqual(len(rest), 3)
+
+    def test_02_heartbeat_and_telemetry_endpoints(self):
+        """Valida registro de heartbeat, telemetria e agregação no status do hub."""
+        hb = self.client.post("/api/multiagent/heartbeat", json={
+            "agent_id": "node-alpha", "hostname": "ALPHA-PC", "ip": "10.0.0.2",
+            "platform": "Windows 11", "version": "2.1.0-MULTIHOST", "layers_active": 20,
+        })
+        self.assertEqual(hb.status_code, 200)
+        self.assertEqual(hb.get_json()["status"], "success")
+
+        tel = self.client.post("/api/multiagent/telemetry", json={
+            "agent_id": "node-alpha", "metrics": {"cpu_util": 42.5, "memory_util": 61.0},
+        })
+        self.assertEqual(tel.status_code, 200)
+
+        data = self.client.get("/api/multiagent/status").get_json()
+        self.assertEqual(data["hosts_count"], 1)
+        self.assertEqual(data["online_count"], 1)
+        self.assertEqual(data["events_count"], 0)
+
+        hosts = self.client.get("/api/multiagent/hosts").get_json()["hosts"]
+        self.assertEqual(hosts[0]["agent_id"], "node-alpha")
+        self.assertEqual(hosts[0]["metrics"]["cpu_util"], 42.5)
+        self.assertTrue(hosts[0]["online"])
+
+    def test_03_events_and_shared_ioc_correlation(self):
+        """Dois hosts reportando o mesmo IOC público -> alerta de movimentação lateral."""
+        import time
+        for aid in ("node-alpha", "node-beta"):
+            self.client.post("/api/multiagent/heartbeat", json={"agent_id": aid, "hostname": aid.upper()})
+            self.client.post("/api/multiagent/events", json={
+                "agent_id": aid,
+                "events": [{
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "severity": "CRITICAL", "category": "C2",
+                    "target": "cmd.exe", "description": "Beacon para 185.220.101.5",
+                }],
+            })
+        corr = self.client.get("/api/multiagent/correlations").get_json()["correlations"]
+        self.assertIn("SHARED_IOC_MULTIHOST", {c["rule"] for c in corr})
+        events = self.client.get("/api/multiagent/events/list?limit=50").get_json()["events"]
+        self.assertEqual(len(events), 2)
+
+    def test_04_mass_offline_correlation(self):
+        """Hosts conhecidos que param de enviar heartbeat -> alerta de interrupção em massa."""
+        for aid in ("ghost-1", "ghost-2"):
+            self.client.post("/api/multiagent/heartbeat", json={"agent_id": aid})
+        # Simula que ambos pararam de responder (heartbeat no passado)
+        for rec in self.server.registry._hosts.values():
+            rec.last_heartbeat -= (self.config.offline_timeout + 5)
+        alerts = self.server.registry.evaluate_correlations(
+            window=self.config.incident_window,
+            mass_offline_threshold=self.config.mass_offline_threshold,
+        )
+        self.assertTrue(any(a["rule"] == "MASS_OFFLINE" for a in alerts))
+
+    def test_05_token_auth(self):
+        """Valida autenticação por token compartilhado entre hub e agentes."""
+        self.config.token = "s3cr3t-token"
+        res_no = self.client.post("/api/multiagent/heartbeat", json={"agent_id": "x"})
+        self.assertEqual(res_no.status_code, 401)
+        res_ok = self.client.post(
+            "/api/multiagent/heartbeat",
+            json={"agent_id": "x"},
+            headers={"X-Sentinel-Token": "s3cr3t-token"},
+        )
+        self.assertEqual(res_ok.status_code, 200)
+
+    def test_06_state_persistence_roundtrip(self):
+        """Valida persistência e restauração do estado do hub (hosts + eventos)."""
+        self.client.post("/api/multiagent/heartbeat", json={"agent_id": "node-alpha", "hostname": "ALPHA"})
+        self.client.post("/api/multiagent/events", json={
+            "agent_id": "node-alpha",
+            "events": [{"severity": "HIGH", "category": "TEST", "target": "t", "description": "d"}],
+        })
+        from multiagent import AgentRegistry
+        reg2 = AgentRegistry(state_dir=self.config.state_dir)
+        loaded = reg2.load_state()
+        self.assertEqual(loaded, 1)
+        rec = reg2.get("node-alpha")
+        self.assertIsNotNone(rec)
+        self.assertEqual(rec.events_count, 1)
+        self.assertEqual(len(rec.events), 1)
+
+    def test_07_remove_host_and_status_summary(self):
+        """Valida remoção administrativa de host e o resumo consolidado do hub."""
+        self.client.post("/api/multiagent/heartbeat", json={"agent_id": "node-alpha"})
+        res = self.client.post("/api/multiagent/hosts/node-alpha/remove")
+        self.assertEqual(res.get_json()["removed"], True)
+        res2 = self.client.post("/api/multiagent/hosts/node-alpha/remove")
+        self.assertEqual(res2.get_json()["status"], "not_found")
+        summary = self.server.status_summary()
+        self.assertEqual(summary["status"], "success")
+        self.assertEqual(summary["hosts_count"], 0)
+
+    def test_08_client_payload_and_lifecycle(self):
+        """Valida construção do heartbeat e ciclo de vida do cliente multi-host."""
+        from multiagent import MultiAgentClient, MultiAgentConfig
+        cfg = MultiAgentConfig(
+            role="agent", agent_id="unit-node",
+            hub_url="http://127.0.0.1:1", heartbeat_interval=0.05,
+        )
+        cli = MultiAgentClient(cfg)
+        hb = cli._build_heartbeat()
+        self.assertEqual(hb["agent_id"], "unit-node")
+        self.assertIn("ip", hb)
+        self.assertIn("platform", hb)
+        self.assertFalse(cli.running)
+        cli.start()
+        try:
+            self.assertTrue(cli.running)
+            cli.push_local_event("HIGH", "TEST", "t", "d")
+            self.assertGreaterEqual(cli.bus.pending, 1)
+        finally:
+            cli.stop()
+        self.assertFalse(cli.running)
+
+
 if __name__ == "__main__":
     unittest.main()

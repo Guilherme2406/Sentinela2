@@ -60,6 +60,9 @@ from functions_engine.engine import FunctionsEngine
 from functions_engine.core import SecurityItem, FunctionContext, RingBufferStorage
 from functions_engine.daemon import TriggerWatchDaemon, TriggerRule
 
+# Multi-Host XDR — hub central que coordena agentes remotos federados
+from multiagent import MultiAgentClient, MultiAgentConfig, MultiAgentServer, load_config
+
 
 
 # Ensure UTF-8 output on Windows consoles
@@ -254,6 +257,84 @@ def on_logger_event(sev, cat, tgt, desc, event_id):
 
 logger.add_listener(on_logger_event)
 
+# -------------------------------------------------------------
+# MODO MULTI-HOST (XDR FEDERADO): hub central + agentes remotos
+# Configuração via multiagent_config.json -> role: hub | agent | off
+# -------------------------------------------------------------
+multiagent_config: MultiAgentConfig = load_config()
+multiagent_client: Optional[MultiAgentClient] = None
+multiagent_server: Optional[MultiAgentServer] = None
+
+
+def _init_multiagent_layer() -> None:
+    """Ativa a camada multi-host de acordo com o papel configurado (hub/agent)."""
+    global multiagent_client, multiagent_server
+    if not multiagent_config.enabled:
+        return
+
+    if multiagent_config.role == "hub":
+        multiagent_server = MultiAgentServer(multiagent_config)
+
+        def _on_remote_event(agent_id: str, event: Dict[str, Any]) -> None:
+            # Eventos de hosts remotos -> log central + SSE do dashboard
+            try:
+                logger.log_event(
+                    str(event.get("severity") or "INFO"),
+                    f"REMOTE:{str(event.get('category') or 'EVENT')}",
+                    f"[{agent_id}] {event.get('target', '')}",
+                    str(event.get("description") or ""),
+                )
+            except Exception:
+                pass
+
+        def _on_correlation(alert: Dict[str, Any]) -> None:
+            # Correlações cross-host -> SSE em tempo real + log central
+            try:
+                sse_broadcaster.publish("correlation", alert)
+                logger.log_event(
+                    str(alert.get("severity") or "HIGH"),
+                    "MULTIHOST_CORRELATION",
+                    str(alert.get("ioc") or ",".join(alert.get("hosts", []))),
+                    str(alert.get("description") or ""),
+                )
+            except Exception:
+                pass
+
+        multiagent_server.event_callback = _on_remote_event
+        multiagent_server.correlation_callback = _on_correlation
+        multiagent_server.init_app(app)
+        logger.log_event("INFO", "SYSTEM_INIT", "MULTIAGENT_HUB", "Hub multi-host ativo: /api/multiagent/*.")
+
+    elif multiagent_config.role == "agent":
+        multiagent_client = MultiAgentClient(multiagent_config)
+        # Repassa todo evento de segurança local para o barramento do hub
+        logger.add_listener(
+            lambda sev, cat, tgt, desc, eid: multiagent_client.push_local_event(sev, cat, tgt, desc)
+        )
+        multiagent_client.start()
+        logger.log_event("INFO", "SYSTEM_INIT", "MULTIAGENT_AGENT", f"Agente multi-host reportando ao hub {multiagent_config.hub_url}.")
+
+
+@app.route("/api/multiagent/agent_status", methods=["GET"])
+def multiagent_agent_status():
+    """Status da camada multi-host local (hub, agent ou off) para o dashboard."""
+    if multiagent_server is not None:
+        return jsonify({"status": "success", "role": "hub", "summary": multiagent_server.status_summary()}), 200
+    if multiagent_client is not None:
+        return jsonify({
+            "status": "success",
+            "role": "agent",
+            "agent_id": multiagent_client.config.agent_id,
+            "hub_url": multiagent_client.config.hub_url,
+            "running": multiagent_client.running,
+            "heartbeat_ok": multiagent_client.heartbeat,
+            "sync_count": multiagent_client.sync_count,
+            "last_error": multiagent_client.last_error,
+            "pending_events": multiagent_client.bus.pending,
+        }), 200
+    return jsonify({"status": "success", "role": "off", "running": False}), 200
+
+
 @app.route("/api/stream/events", methods=["GET"])
 def stream_events():
     """Endpoint SSE transmitindo logs, alarmes e incidentes em tempo real para o dashboard."""
@@ -348,6 +429,11 @@ def init_sentinel_services():
         canary.start_monitoring()
         # Sincroniza CTI em background
         threading.Thread(target=threat_intel.start_auto_sync, kwargs={"interval_seconds": 3600}, daemon=True).start()
+        # Camada Multi-Host (hub central / agente federado)
+        try:
+            _init_multiagent_layer()
+        except Exception as e:
+            logger.log_event("ERROR", "SYSTEM_INIT", "MULTIAGENT_FAILED", str(e))
         logger.log_event("INFO", "SYSTEM_INIT", "SERVICES_STARTED", "Todos os motores Sovereign do Sentinela XDR estão operacionais.")
     except Exception as e:
         logger.log_event("ERROR", "SYSTEM_INIT", "START_FAILED", str(e))
@@ -2262,6 +2348,17 @@ def get_functions_status():
     funcs = functions_engine_instance.list_functions()
     categories = sorted({f["category"] for f in funcs})
     storage = functions_storage_instance
+    daemon = trigger_daemon_instance if trigger_daemon_instance else trigger_daemon
+    try:
+        rules = daemon.list_rules() if hasattr(daemon, "list_rules") else []
+        problems = daemon.get_active_problems() if hasattr(daemon, "get_active_problems") else []
+        daemon_running = getattr(daemon, "is_running", False)
+        if hasattr(daemon, "_thread") and daemon._thread is not None:
+            daemon_running = daemon_running or (daemon._thread.is_alive() if hasattr(daemon._thread, "is_alive") else bool(daemon_running))
+    except Exception:
+        rules = []
+        problems = []
+        daemon_running = False
     return jsonify({
         "status": "success",
         "total_functions": len(funcs),
@@ -2269,6 +2366,9 @@ def get_functions_status():
         "items_count": len(storage),
         "item_ids": storage.item_ids(),
         "max_size": getattr(storage, "max_size", 10000),
+        "alarms_count": len(problems),
+        "rules_count": len(rules),
+        "daemon_running": daemon_running,
     }), 200
 
 

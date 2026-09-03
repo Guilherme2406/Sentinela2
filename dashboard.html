@@ -892,6 +892,11 @@
                 <i class="fa-solid fa-layer-group"></i> Arquitetura & Status
             </button>
 
+            <button onclick="openMultiHostModal()" class="btn-action" style="color: #a855f7; border-color: rgba(168, 85, 247, 0.3);" title="Frota Multi-Host XDR: nós remotos, telemetria federada e correlação cross-host">
+                <i class="fa-solid fa-satellite-dish"></i> Multi-Host
+                <span id="multiHostBadge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid #94a3b8; font-size: 0.65rem; padding: 1px 6px; border-radius: 4px; margin-left: 2px;">OFF</span>
+            </button>
+
             <!-- CONTROLES TÁTICOS SOBERANOS: SELETOR DE POSTURA -->
             <div class="posture-segmented-control" title="Seletor de Postura de Defesa Soberana em 1-Clique">
                 <span class="posture-label"><i class="fa-solid fa-shield-halved"></i> POSTURA:</span>
@@ -1726,21 +1731,21 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
                         <div>
                             <h4 style="color: #fff; font-size: 0.92rem; margin: 0 0 0.25rem 0;">
-                                <i class="fa-solid fa-circle-check" style="color: var(--accent-green);"></i> Arquitetura Soberana Multi-Camadas: 100% BLINDADA
+                                <i class="fa-solid fa-circle-check" style="color: var(--accent-green);"></i> Arquitetura Soberana Multi-Camadas: <span id="kernelModalHealthTitle">100%</span> BLINDADA
                             </h4>
-                            <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                            <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.4;" id="kernelModalSummaryText">
                                 Todos os 24 motores de Ring 3 e OS Bridge operam concorrentemente em tempo real. Driver de Ring 0 com código-fonte C integrado.
                             </p>
                         </div>
                         <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;" id="kernelModalBadges">
-                            <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); font-size: 0.75rem; padding: 4px 10px;">
-                                <i class="fa-solid fa-microchip"></i> 24 MOTORES ATIVOS
+                            <span class="badge" id="kernelModalActiveBadgeWrap" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); font-size: 0.75rem; padding: 4px 10px;">
+                                <i class="fa-solid fa-microchip"></i> <span id="kernelModalActiveCount">24</span> MOTORES ATIVOS
                             </span>
-                            <span class="badge" style="background: rgba(0, 240, 255, 0.15); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); font-size: 0.75rem; padding: 4px 10px;">
-                                <i class="fa-solid fa-shield"></i> 100% HEALTH
+                            <span class="badge" id="kernelModalHealthBadgeWrap" style="background: rgba(0, 240, 255, 0.15); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); font-size: 0.75rem; padding: 4px 10px;">
+                                <i class="fa-solid fa-shield"></i> <span id="kernelModalHealthCount">100</span>% HEALTH
                             </span>
-                            <span class="badge" style="background: rgba(245, 158, 11, 0.15); color: var(--accent-warning); border: 1px solid var(--accent-warning); font-size: 0.75rem; padding: 4px 10px;">
-                                <i class="fa-solid fa-code"></i> RING 0 WDK PRONTO
+                            <span class="badge" id="kernelModalRing0BadgeWrap" style="background: rgba(245, 158, 11, 0.15); color: var(--accent-warning); border: 1px solid var(--accent-warning); font-size: 0.75rem; padding: 4px 10px;">
+                                <i class="fa-solid fa-code"></i> <span id="kernelModalRing0Count">1</span> DRIVER RING 0
                             </span>
                         </div>
                     </div>
@@ -2398,7 +2403,7 @@
         <div class="modal-container" style="max-width: 1060px;">
             <div class="modal-header">
                 <div class="card-title" style="color: var(--accent-green);">
-                    <i class="fa-solid fa-circle-check"></i> Auditoria Geral de Saúde & Proteções Ativas (<span id="diagnosticsCountLabel">15</span> Camadas)
+                    <i class="fa-solid fa-circle-check"></i> Auditoria Geral de Saúde & Proteções Ativas (<span id="diagnosticsCountLabel">20</span> Camadas)
                 </div>
                 <button onclick="closeDiagnosticsModal()" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">
                     <i class="fa-solid fa-xmark"></i>
@@ -2411,8 +2416,8 @@
                         <div id="diagOverallStatusText" style="font-size: 1.15rem; font-weight: 800; color: var(--accent-green); display: flex; align-items: center; gap: 0.5rem;">
                             <i class="fa-solid fa-circle-check"></i> SISTEMA 100% OPERACIONAL & BLINDADO
                         </div>
-                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;">
-                            Todos os 15 motores de defesa ativa, inteligência de ameaças e mitigação autônoma estão operando com êxito.
+                        <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;" id="diagSummaryText">
+                            Todos os 20 motores de defesa ativa, inteligência de ameaças e mitigação autônoma estão operando com êxito.
                         </div>
                     </div>
                     <div style="display: flex; gap: 0.65rem;">
@@ -2448,6 +2453,38 @@
                 </button>
             </div>
             <div class="modal-body">
+                <!-- 0. RESUMO EXECUTIVO DO FUNCTIONS ENGINE (KPIs DO MOTOR) -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 0.6rem; margin-bottom: 1rem;">
+                    <div style="background: rgba(245, 158, 11, 0.06); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 0.7rem 0.9rem;">
+                        <div style="font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.35rem;">
+                            <i class="fa-solid fa-gears" style="color: var(--accent-warning);"></i> Funções Registradas
+                        </div>
+                        <div id="functionsCount" style="font-size: 1.3rem; font-weight: 800; color: var(--accent-warning); font-family: 'JetBrains Mono', monospace; margin-top: 0.15rem;">—</div>
+                    </div>
+                    <div style="background: rgba(0, 240, 255, 0.06); border: 1px solid rgba(0, 240, 255, 0.35); border-radius: 8px; padding: 0.7rem 0.9rem;">
+                        <div style="font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.35rem;">
+                            <i class="fa-solid fa-tags" style="color: var(--accent-cyan);"></i> Categorias
+                        </div>
+                        <div id="functionsCategories" style="font-size: 0.78rem; font-weight: 700; color: var(--accent-cyan); font-family: 'JetBrains Mono', monospace; margin-top: 0.35rem; line-height: 1.3;">—</div>
+                    </div>
+                    <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 8px; padding: 0.7rem 0.9rem;">
+                        <div style="font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.35rem;">
+                            <i class="fa-solid fa-database" style="color: var(--accent-green);"></i> Itens no Buffer (Séries)
+                        </div>
+                        <div id="functionsItemsCount" style="font-size: 1.3rem; font-weight: 800; color: var(--accent-green); font-family: 'JetBrains Mono', monospace; margin-top: 0.15rem;">—</div>
+                    </div>
+                    <div style="background: rgba(168, 85, 247, 0.06); border: 1px solid rgba(168, 85, 247, 0.35); border-radius: 8px; padding: 0.7rem 0.9rem;">
+                        <div style="font-size: 0.66rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 0.35rem;">
+                            <i class="fa-solid fa-tower-broadcast" style="color: var(--accent-purple);"></i> Alarmes / Triggers Ativos
+                        </div>
+                        <div id="functionsAlarmsCount" style="font-size: 1.3rem; font-weight: 800; color: var(--accent-purple); font-family: 'JetBrains Mono', monospace; margin-top: 0.15rem;">—</div>
+                    </div>
+                </div>
+                <!-- STATUS DO TRIGGER WATCH DAEMON EM TEMPO REAL -->
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; padding: 0.55rem 0.9rem; background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.74rem;">
+                    <span style="color: var(--text-muted);"><i class="fa-solid fa-tower-broadcast" style="color: var(--accent-cyan);"></i> Trigger Watch Daemon (avaliação autônoma de expressões a cada 5s):</span>
+                    <span id="functionsDaemonState" style="color: var(--accent-green); font-weight: 700;">🟢 DAEMON ATIVO</span>
+                </div>
                 <!-- 1. VITRINE DE TELEMETRIA AO VIVO (GAUGES & PROGRESS BARS) -->
                 <div style="font-size: 0.82rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
                     <span><i class="fa-solid fa-heart-pulse" style="color: var(--accent-cyan);"></i> Telemetria Operacional & Postura em Tempo Real</span>
@@ -2657,6 +2694,80 @@
             <div class="modal-footer">
                 <span><i class="fa-solid fa-certificate"></i> Motor nativo de séries temporais — 100% local, sem telemetria externa. Estilo Zabbix.</span>
                 <button onclick="closeFunctionsModal()" class="btn-action">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 13: FROTA MULTI-HOST (XDR FEDERADO) -->
+    <div id="multiHostModal" class="modal-overlay">
+        <div class="modal-container" style="max-width: 1060px; width: 95%;">
+            <div class="modal-header">
+                <div class="card-title" style="color: #a855f7;">
+                    <i class="fa-solid fa-satellite-dish"></i> Frota Multi-Host — Coordenação XDR Federada
+                </div>
+                <button onclick="closeMultiHostModal()" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="modal-body">
+                <!-- RESUMO DO NÓ LOCAL -->
+                <div style="background: rgba(168, 85, 247, 0.05); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+                    <div>
+                        <h4 style="color: #fff; font-size: 0.92rem; margin: 0 0 0.25rem 0;">
+                            <i class="fa-solid fa-network-wired" style="color: #a855f7;"></i> Papel deste nó: <span id="mhRoleLabel" style="font-family: 'JetBrains Mono', monospace;">—</span>
+                        </h4>
+                        <p style="font-size: 0.76rem; color: var(--text-muted); margin: 0; line-height: 1.4;">
+                            Camada federada do Sentinela XDR: um hub central coordena N agentes remotos com heartbeat, telemetria e correlação cross-host em tempo real.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); font-size: 0.75rem; padding: 4px 10px;">
+                            <i class="fa-solid fa-server"></i> <span id="mhOnlineCount">0</span>/<span id="mhHostsCount">0</span> HOSTS ONLINE
+                        </span>
+                        <span class="badge" style="background: rgba(0, 240, 255, 0.15); color: var(--accent-cyan); border: 1px solid var(--accent-cyan); font-size: 0.75rem; padding: 4px 10px;">
+                            <i class="fa-solid fa-file-shield"></i> <span id="mhEventsCount">0</span> EVENTOS REMOTOS
+                        </span>
+                    </div>
+                </div>
+
+                <!-- HOSTS DA FROTA -->
+                <div class="table-wrapper" style="max-height: 320px; overflow-y: auto; margin-bottom: 1rem;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Host</th>
+                                <th>IP</th>
+                                <th>Plataforma</th>
+                                <th>Versão</th>
+                                <th>Motores</th>
+                                <th>CPU / RAM</th>
+                                <th>Eventos</th>
+                                <th>Última Sincronização</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mhHostsTableBody">
+                            <tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.2rem;">Carregando frota…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- CORRELAÇÕES CROSS-HOST -->
+                <h4 style="color: #fff; font-size: 0.85rem; margin: 0 0 0.5rem 0;"><i class="fa-solid fa-diagram-project" style="color: #fbbf24;"></i> Correlação Cross-Host (Motor XDR Federado)</h4>
+                <div id="mhCorrelationsContainer" style="background: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.8rem; max-height: 190px; overflow-y: auto; font-size: 0.76rem; color: #cbd5e1;">
+                    <span style="color: var(--text-muted);">Nenhuma correlação detectada entre hosts.</span>
+                </div>
+
+                <!-- STATUS DO AGENTE LOCAL (quando papel = agent) -->
+                <div id="mhAgentPanel" style="display: none; background: rgba(0, 240, 255, 0.05); border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 8px; padding: 0.8rem 1rem; margin-top: 1rem; font-size: 0.76rem; color: #cbd5e1; font-family: 'JetBrains Mono', monospace;">
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <span style="font-size: 0.74rem; color: var(--text-muted);"><i class="fa-solid fa-shuffle"></i> Configuração: <code>multiagent_config.json</code> — role: hub | agent | off (token compartilhado no campo token).</span>
+                <button onclick="fetchMultiHostStatus()" class="btn-action"><i class="fa-solid fa-rotate"></i> Atualizar</button>
+                <button onclick="closeMultiHostModal()" class="btn-action">Fechar</button>
             </div>
         </div>
     </div>
@@ -5080,6 +5191,33 @@
                 if (!res.ok) return;
                 const data = await res.json();
                 if (data.architecture_matrix && data.architecture_matrix.length > 0) {
+                    // --- VALIDAÇÃO DINÂMICA DOS DADOS DA MATRIZ ---
+                    const matrix = data.architecture_matrix;
+                    const total = matrix.length;
+                    const activeCount = matrix.filter(m => m.active).length;
+                    const ring0Modules = matrix.filter(m => (m.ring || '').includes('Ring 0'));
+                    const ring0Count = ring0Modules.length;
+                    const ring0Pending = ring0Modules.filter(m => !m.active).length;
+                    const health = total > 0 ? Math.round((activeCount / total) * 100) : 0;
+
+                    // Atualiza badges dinâmicos do resumo executivo
+                    const activeBadge = document.getElementById('kernelModalActiveCount');
+                    if (activeBadge) activeBadge.innerText = activeCount;
+                    const healthBadge = document.getElementById('kernelModalHealthCount');
+                    if (healthBadge) healthBadge.innerText = health;
+                    const ring0Badge = document.getElementById('kernelModalRing0Count');
+                    if (ring0Badge) ring0Badge.innerText = ring0Count;
+                    const healthTitle = document.getElementById('kernelModalHealthTitle');
+                    if (healthTitle) {
+                        healthTitle.innerText = `${health}%`;
+                        healthTitle.style.color = health === 100 ? 'var(--accent-green)' : (health >= 80 ? 'var(--accent-warning)' : 'var(--accent-red)');
+                    }
+                    const summaryText = document.getElementById('kernelModalSummaryText');
+                    if (summaryText) {
+                        const pendNote = ring0Pending > 0 ? ` Driver de Ring 0 com código-fonte C integrado (${ring0Pending} módulo(s) aguardando compilação WDK).` : '';
+                        summaryText.innerText = `Todos os ${activeCount} motores de Ring 3 e OS Bridge operam concorrentemente em tempo real.${pendNote}`;
+                    }
+
                     const tbody = document.getElementById('kernelModalTableBody');
                     let html = '';
                     data.architecture_matrix.forEach(mod => {
@@ -5151,6 +5289,20 @@
                 if (data.subsystems && data.subsystems.length > 0) {
                     const countLabel = document.getElementById('diagnosticsCountLabel');
                     if (countLabel) countLabel.innerText = data.subsystems.length;
+                    const summaryText = document.getElementById('diagSummaryText');
+                    if (summaryText) {
+                        const total = data.subsystems.length;
+                        const active = data.active_subsystems !== undefined ? data.active_subsystems : total;
+                        summaryText.innerText = `Todos os ${active} de ${total} motores de defesa ativa, inteligência de ameaças e mitigação autônoma estão operando com êxito.`;
+                    }
+                    const statusText = document.getElementById('diagOverallStatusText');
+                    if (statusText) {
+                        const oh = data.overall_health !== undefined ? data.overall_health : 100;
+                        statusText.style.color = oh === 100 ? 'var(--accent-green)' : (oh >= 80 ? 'var(--accent-warning)' : 'var(--accent-red)');
+                        statusText.innerHTML = (oh === 100
+                            ? '<i class="fa-solid fa-circle-check"></i> SISTEMA 100% OPERACIONAL & BLINDADO'
+                            : `<i class="fa-solid fa-triangle-exclamation"></i> SISTEMA ${oh}% OPERACIONAL — ATENÇÃO REQUERIDA`);
+                    }
                     let html = '';
                     data.subsystems.forEach(s => {
                         html += `
@@ -5237,6 +5389,16 @@
                         const threat = JSON.parse(e.data);
                         playTacticalAlertSound(threat.severity || 'HIGH');
                         fetchThreatMap();
+                    } catch (err) {}
+                });
+
+                _sseConnection.addEventListener('correlation', (e) => {
+                    try {
+                        const alert = JSON.parse(e.data);
+                        playTacticalAlertSound(alert.severity || 'HIGH');
+                        showTacticalToast('🌐 CORRELAÇÃO MULTI-HOST', alert.description || 'Padrão de ataque entre múltiplos hosts detectado.', (alert.severity === 'DISASTER' || alert.severity === 'CRITICAL') ? 'error' : 'warning');
+                        const mhModal = document.getElementById('multiHostModal');
+                        if (mhModal && mhModal.style.display === 'flex') fetchMultiHostStatus();
                     } catch (err) {}
                 });
 
@@ -5652,9 +5814,21 @@
                 if (elCat) elCat.innerText = (data.categories || []).join(', ') || '—';
                 const elItems = document.getElementById('functionsItemsCount');
                 if (elItems) elItems.innerText = data.items_count;
+                const elAlarms = document.getElementById('functionsAlarmsCount');
+                if (elAlarms) {
+                    const alarmsCount = (data.alarms_count !== undefined) ? data.alarms_count : ((data.rules_count !== undefined ? data.rules_count : 0) + ' REGRAS');
+                    elAlarms.innerText = alarmsCount;
+                    if (Number.isFinite(Number(data.alarms_count)) && Number(data.alarms_count) > 0) {
+                        elAlarms.style.color = 'var(--accent-red)';
+                    } else {
+                        elAlarms.style.color = 'var(--accent-purple)';
+                    }
+                }
+                const daemonState = document.getElementById('functionsDaemonState');
+                if (daemonState) daemonState.innerText = (data.daemon_running) ? '🟢 DAEMON ATIVO' : '⚫ DAEMON PARADO';
 
                 const badge = document.getElementById('functionsEngineBadge');
-                if (badge) badge.innerText = data.total_functions;
+                if (badge) badge.innerText = `${data.total_functions} funções`;
 
                 const sel = document.getElementById('functionsCategoryFilter');
                 if (sel && sel.options.length <= 1) {
@@ -5949,6 +6123,138 @@
                 alert('Erro na requisição: ' + err);
             }
         }
+
+        // --- FROTA MULTI-HOST (XDR FEDERADO) ---
+        function openMultiHostModal() {
+            document.getElementById('multiHostModal').style.display = 'flex';
+            fetchMultiHostStatus();
+        }
+
+        function closeMultiHostModal() {
+            document.getElementById('multiHostModal').style.display = 'none';
+        }
+
+        async function fetchMultiHostStatus() {
+            const badge = document.getElementById('multiHostBadge');
+            try {
+                const res = await fetch('/api/multiagent/agent_status');
+                const data = await res.json();
+                const role = (data.role || 'off').toUpperCase();
+
+                const roleLabel = document.getElementById('mhRoleLabel');
+                const agentPanel = document.getElementById('mhAgentPanel');
+
+                if (role === 'HUB') {
+                    const s = data.summary || {};
+                    roleLabel.textContent = 'HUB CENTRAL';
+                    roleLabel.style.color = '#a855f7';
+                    renderMultiHostHosts(s.hosts || []);
+                    renderMultiHostCorrelations(s.correlations || []);
+                    const online = s.online_count || 0, total = s.hosts_count || 0;
+                    document.getElementById('mhOnlineCount').textContent = online;
+                    document.getElementById('mhHostsCount').textContent = total;
+                    document.getElementById('mhEventsCount').textContent = s.events_count || 0;
+                    agentPanel.style.display = 'none';
+                    updateMultiHostBadge(badge, online, total, role);
+                } else if (role === 'AGENT') {
+                    roleLabel.textContent = 'AGENTE REMOTO';
+                    roleLabel.style.color = '#38bdf8';
+                    renderMultiHostHosts([]);
+                    renderMultiHostCorrelations([]);
+                    document.getElementById('mhOnlineCount').textContent = data.heartbeat_ok ? 1 : 0;
+                    document.getElementById('mhHostsCount').textContent = 1;
+                    document.getElementById('mhEventsCount').textContent = '—';
+                    agentPanel.style.display = 'block';
+                    agentPanel.innerHTML = `
+                        <div><i class="fa-solid fa-tower-broadcast" style="color: ${data.heartbeat_ok ? '#10b981' : '#ef4444'};"></i> Hub: ${data.hub_url || '—'} | Heartbeat: ${data.heartbeat_ok ? 'OK' : 'FALHANDO'} | Sincronizações: ${data.sync_count || 0} | Fila local: ${data.pending_events || 0}</div>
+                        ${data.last_error ? `<div style="color: #ef4444; margin-top: 4px;">Último erro: ${data.last_error}</div>` : ''}`;
+                    updateMultiHostBadge(badge, data.heartbeat_ok ? 1 : 0, 1, role);
+                } else {
+                    roleLabel.textContent = 'DESATIVADO (OFF)';
+                    roleLabel.style.color = '#94a3b8';
+                    renderMultiHostHosts([]);
+                    renderMultiHostCorrelations([]);
+                    document.getElementById('mhOnlineCount').textContent = 0;
+                    document.getElementById('mhHostsCount').textContent = 0;
+                    document.getElementById('mhEventsCount').textContent = 0;
+                    agentPanel.style.display = 'none';
+                    updateMultiHostBadge(badge, 0, 0, role);
+                }
+            } catch (e) {
+                const body = document.getElementById('mhHostsTableBody');
+                if (body) body.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #ef4444; padding: 1.2rem;">Falha ao contatar a camada multi-host: ${String(e)}</td></tr>`;
+            }
+        }
+
+        function updateMultiHostBadge(badge, online, total, role) {
+            if (!badge) return;
+            if (role === 'OFF') {
+                badge.style.background = 'rgba(148, 163, 184, 0.2)';
+                badge.style.color = '#94a3b8';
+                badge.style.borderColor = '#94a3b8';
+                badge.textContent = 'OFF';
+                return;
+            }
+            const ok = online > 0;
+            badge.style.background = ok ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)';
+            badge.style.color = ok ? 'var(--accent-green)' : '#ef4444';
+            badge.style.borderColor = ok ? 'var(--accent-green)' : '#ef4444';
+            badge.textContent = `${online}/${total} ONLINE`;
+        }
+
+        function renderMultiHostHosts(hosts) {
+            const tbody = document.getElementById('mhHostsTableBody');
+            if (!tbody) return;
+            if (!hosts.length) {
+                tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 1.2rem;">Nenhum host remoto registrado. Ative o papel "agent" em outras máquinas apontando o hub_url para este nó.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = hosts.map(h => {
+                const online = !!h.online;
+                const statusBadge = online
+                    ? '<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green);">ONLINE</span>'
+                    : '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid #ef4444;">OFFLINE</span>';
+                const cpu = (h.metrics && h.metrics.cpu_util !== undefined) ? `${h.metrics.cpu_util}%` : '—';
+                const ram = (h.metrics && h.metrics.memory_util !== undefined) ? `${h.metrics.memory_util}%` : '—';
+                const lastSync = h.last_heartbeat ? new Date(h.last_heartbeat * 1000).toLocaleString('pt-BR') : '—';
+                return `
+                <tr style="${online ? '' : 'opacity: 0.55;'}">
+                    <td>${statusBadge}</td>
+                    <td style="font-weight: 600; color: #fff;">${h.hostname || h.agent_id}</td>
+                    <td style="font-family: 'JetBrains Mono', monospace;">${h.ip || '—'}</td>
+                    <td>${h.platform || '—'}</td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;">${h.version || '—'}</td>
+                    <td>${h.layers_active || 0}/25</td>
+                    <td style="font-family: 'JetBrains Mono', monospace;">${cpu} / ${ram}</td>
+                    <td>${h.events_count || 0}</td>
+                    <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;">${lastSync}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        function renderMultiHostCorrelations(correlations) {
+            const container = document.getElementById('mhCorrelationsContainer');
+            if (!container) return;
+            if (!correlations.length) {
+                container.innerHTML = '<span style="color: var(--text-muted);">Nenhuma correlação detectada entre hosts.</span>';
+                return;
+            }
+            container.innerHTML = correlations.map(c => {
+                const sevColor = (c.severity === 'DISASTER' || c.severity === 'CRITICAL') ? '#ef4444' : '#fbbf24';
+                return `
+                <div style="border-left: 3px solid ${sevColor}; padding: 0.45rem 0.7rem; margin-bottom: 0.45rem; background: rgba(239, 68, 68, 0.04); border-radius: 4px;">
+                    <div style="display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.4rem;">
+                        <span style="font-weight: 700; color: ${sevColor};"><i class="fa-solid fa-triangle-exclamation"></i> ${c.rule}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--text-muted);">${c.detected_at ? new Date(c.detected_at * 1000).toLocaleString('pt-BR') : '—'}</span>
+                    </div>
+                    <div style="margin-top: 2px;">${c.description || ''}</div>
+                    <div style="margin-top: 2px; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--accent-cyan);">Hosts: ${(c.hosts || []).join(', ')}</div>
+                </div>`;
+            }).join('');
+        }
+
+        fetchMultiHostStatus();
+        setInterval(fetchMultiHostStatus, 6000);
     </script>
 </body>
 </html>

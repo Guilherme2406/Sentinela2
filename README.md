@@ -52,6 +52,13 @@ Sentinela2/
 │   ├── kernel_etw_monitor.py          # Monitor de Eventos de Kernel ETW Ring 0
 │   └── logger.py                      # Security Event Logger (Banco SQLite Local)
 │
+├── 🌐 multiagent/                      # Camada Multi-Host — XDR Federado (Hub & Agentes)
+│   ├── config.py                       # Papéis do nó (hub | agent | off) e parâmetros do cluster
+│   ├── registry.py                     # Registro de hosts, telemetria agregada e correlação cross-host
+│   ├── bus.py                          # Barramento thread-safe de eventos locais para o hub
+│   ├── agent.py                        # Cliente remoto (heartbeat, telemetria e envio de eventos)
+│   └── server.py                       # Blueprint Flask do hub central (ingestão e consultas)
+│
 ├── 🗄️ Diretórios de Dados Soberanos
 │   ├── quarantine/                    # Arquivos maliciosos isolados e cifrados em AES-256
 │   ├── sentinel_vault/                # Snapshots imutáveis para recuperação anti-ransomware
@@ -63,7 +70,8 @@ Sentinela2/
 │   └── assets/                        # Ícones (.ico, .png) e logotipo oficial
 │
 └── ⚙️ Configuração, Testes e Utilitários
-    ├── test_suite.py                  # Suite de Testes Automatizados Unitários (31/31 OK)
+    ├── test_suite.py                  # Suite de Testes Automatizados Unitários (70 testes OK)
+    ├── smoke_test_engines.py          # Smoke test de todos os endpoints dos motores (Flask test client)
     ├── setup_project.py               # Verificador de integridade estrutural do ambiente
     ├── bootstrap_env.py               # Auto-instalador resiliente de dependências
     ├── requirements.txt               # Dependências Python (Flask, PyQt6, scikit-learn, etc.)
@@ -109,8 +117,23 @@ Sentinela2/
 * O painel estará disponível no navegador em **`http://localhost:5000`**.
 * Ou clique duas vezes no ícone do escudo ao lado do relógio do Windows na bandeja do sistema.
 
-### 3. Testes Automatizados:
-* Para validar a integridade de todos os 15 motores:
+### 3. Modo Multi-Host (XDR Federado):
+* Transforme o Sentinela em um XDR federado: um nó central (**hub**) coordena N agentes remotos que enviam heartbeat, telemetria e eventos de segurança em tempo real, com correlação cross-host entre máquinas.
+* Configure o papel de cada nó no arquivo `multiagent_config.json`:
+```json
+{
+  "role": "agent",
+  "agent_id": "nome-do-no",
+  "hub_url": "http://IP-DO-HUB:5000",
+  "token": "token-compartilhado-opcional"
+}
+```
+* No servidor central utilize `"role": "hub"`; com `"role": "off"` (padrão) a camada permanece inerte.
+* Regras de correlação cross-host: IOC compartilhado em múltiplos hosts (movimentação lateral), interrupção em massa de agentes (possível Wiper) e surto coordenado de incidentes.
+* No dashboard, o botão **Multi-Host** exibe a frota em tempo real, o status do agente local e as correlações detectadas (com alerta tático via SSE).
+
+### 4. Testes Automatizados:
+* Para validar a integridade de todos os motores:
 ```bash
 python test_suite.py
 ```
