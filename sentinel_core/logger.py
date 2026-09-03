@@ -46,13 +46,20 @@ class SecurityEventLogger:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON security_events(timestamp DESC)")
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_severity ON security_events(severity)")
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_category ON security_events(category)")
+        self._listeners: List = []
         # Purge de inicialização para manter o banco leve e veloz
         try:
             self.rotate_and_purge_old_events()
         except Exception:
             pass
 
+    def add_listener(self, fn) -> None:
+        """Registra um callback para ser notificado instantaneamente a cada novo evento gravado."""
+        if fn not in self._listeners:
+            self._listeners.append(fn)
+
     def log_event(self, severity: str, category: str, target: str, description: str) -> int:
+        event_id = 0
         with self._lock:
             with closing(self._get_connection()) as conn:
                 with conn:
@@ -61,7 +68,15 @@ class SecurityEventLogger:
                         INSERT INTO security_events (severity, category, target, description)
                         VALUES (?, ?, ?, ?)
                     """, (severity.upper(), category.upper(), str(target), str(description)))
-                    return cursor.lastrowid or 0
+                    event_id = cursor.lastrowid or 0
+
+        for listener in list(self._listeners):
+            try:
+                listener(severity.upper(), category.upper(), str(target), str(description), event_id)
+            except Exception:
+                pass
+
+        return event_id
 
     def get_recent_events(self, limit: int = 20) -> List[Dict[str, Any]]:
         with self._lock:

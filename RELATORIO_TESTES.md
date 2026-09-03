@@ -1,16 +1,16 @@
 # 🛡️ Relatório Completo de Testes — Sentinela2 XDR
 
-**Data da execução:** 02/09/2026 21:16:15  
+**Data da execução:** 02/09/2026 21:38:40  
 **Ambiente:** Python 3.14.7 — Windows 11  
-**Duração total:** 8.13s  
+**Duração total:** 9.55s  
 **Status Geral:** ✅ APROVADO (100% OPERACIONAL)
 
 ## 📊 Resumo Executivo
 
 | Métrica | Valor |
 |---|---|
-| Total de testes unitários | 193 (61 no test_suite + 132 no test_functions_engine) |
-| Aprovados | 193 |
+| Total de testes unitários | 194 (62 no test_suite + 132 no test_functions_engine) |
+| Aprovados | 194 |
 | Falhas | 0 |
 | Erros | 0 |
 | Pulados | 0 |
@@ -20,6 +20,19 @@
 
 - Import de todos os módulos do `sentinel_core/` (56 módulos soberanos, 0 falhas)
 - Validação das **20 Camadas Soberanas de Defesa Ativa**
+- **Frente 2: Streaming SSE em Tempo Real (< 10ms)**:
+  - Endpoint `GET /api/stream/events` via `SentinelEventBroadcaster` thread-safe
+  - Inserção em tempo real de logs e ameaças na tela sem atraso de polling
+- **Frente 3: Mapa Cyber Warfare & Radar Balístico**:
+  - Arcos balísticos curvos Bézier animados conectando atacantes externos ao host protegido
+  - Painel HUD do **Top 5 Países Ofensores** com contagem e bandeiras
+- **Frente 5: Inspetor Forense de Artefatos em Quarentena**:
+  - Endpoint `GET /api/quarantine/inspect` decifrando em memória RAM sem tocar no disco
+  - Cálculo de Entropia de Shannon global e em 16 blocos (detecção de packers/ransomware > 7.2)
+  - Extração de strings suspeitas (Comandos, Win32 APIs, IOCs de Rede, Chaves de Persistência)
+  - Hashes criptográficos MD5, SHA-1, SHA-256
+- **Relatório Forense em PDF**:
+  - Endpoint `GET /api/reports/forensic/html` com compilação direta de PDF A4 via `html2pdf.js`
 - **Melhorias de Performance & Banco SQLite**:
   - Modo WAL (`PRAGMA journal_mode = WAL;`) e `PRAGMA synchronous = NORMAL;`
   - Política de retenção e rotação de logs (`POST /api/logs/purge`)

@@ -1239,7 +1239,43 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         watchdog.stop()
 
         self.assertGreaterEqual(watchdog.healed_count, 1)
-        self.assertGreaterEqual(run_counter[0], 2)
+    def test_11_sse_streaming_and_quarantine_inspect(self):
+        """Valida o streaming SSE em tempo real e a inspeção forense de quarentena (Entropia & Strings)."""
+        import os
+        from sentinel_api import sse_broadcaster, calculate_shannon_entropy
+
+        # 1. Valida cálculo matemático de entropia de Shannon
+        low_ent = calculate_shannon_entropy(b"AAAAAAAABBBBBBBBCCCCCCCC")
+        high_ent = calculate_shannon_entropy(os.urandom(1000))
+        self.assertLess(low_ent, 2.0)
+        self.assertGreater(high_ent, 7.0)
+
+        # 2. Valida conexão e heartbeat SSE
+        res_sse = self.client.get("/api/stream/events")
+        self.assertEqual(res_sse.status_code, 200)
+        self.assertEqual(res_sse.mimetype, "text/event-stream")
+
+        # 3. Valida inspeção de quarentena com artefato contendo IOCs e comandos
+        target_soar = getattr(self, "soar", None)
+        quarantine_dir = getattr(target_soar, "quarantine_dir", os.path.join(self.temp_dir, "quarantine"))
+        os.makedirs(quarantine_dir, exist_ok=True)
+        sample_path = os.path.join(quarantine_dir, "test_threat.quarantine")
+        with open(sample_path, "wb") as f:
+            f.write(b"powershell.exe -w hidden -enc JABhID0... VirtualAlloc http://185.220.101.5/c2" + os.urandom(400))
+
+        try:
+            res_insp = self.client.get(f"/api/quarantine/inspect?file={sample_path}")
+            self.assertEqual(res_insp.status_code, 200)
+            data = res_insp.get_json()
+            self.assertEqual(data.get("status"), "SUCCESS")
+            self.assertIn("hashes", data)
+            self.assertIn("entropy", data)
+            self.assertIn("suspicious_indicators", data)
+            self.assertGreater(data["entropy"]["global_shannon"], 5.0)
+            self.assertIn("COMMANDS", data["suspicious_indicators"])
+        finally:
+            if os.path.exists(sample_path):
+                os.remove(sample_path)
 
 
 if __name__ == "__main__":

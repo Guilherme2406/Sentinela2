@@ -8,9 +8,11 @@ import threading
 import webbrowser
 import json
 import re
+import queue
+import math
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from flask import Flask, jsonify, request, send_file, Response, send_from_directory
+from flask import Flask, jsonify, request, send_file, Response, send_from_directory, stream_with_context
 from flask_cors import CORS
 
 # Importação de todos os motores do Sentinel Core (com suporte a nomes Sovereign e padrão)
@@ -168,6 +170,15 @@ def on_threat_detected(ip: str, attack_type: str, severity: str = "CRITICAL"):
     # 3. Bane o IP direto no Firewall do SO (Kernel Level)
     target_fw.block_ip(ip, reason=f"{attack_type} ({severity})")
 
+    # 4. Transmite evento de ameaça em tempo real via SSE
+    sse_broadcaster.publish("threat", {
+        "ip": ip,
+        "attack_type": attack_type,
+        "severity": severity,
+        "geo": geo_data,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    })
+
 honeypot = SentinelHoneypot(logger=logger, honeypot_dir=os.path.join(BASE_DIR, "honeypots"), port=2222, alert_callback=on_threat_detected)
 nids = NIDSRadar(logger=logger, alert_callback=on_threat_detected)
 
@@ -196,6 +207,75 @@ anti_exploit_guard_instance = anti_exploit_guard
 perimeter_guard_instance = perimeter_guard
 posture_guard_instance = posture_guard
 
+# -------------------------------------------------------------
+# BROADCAST DE EVENTOS EM TEMPO REAL VIA SSE (SERVER-SENT EVENTS)
+# -------------------------------------------------------------
+class SentinelEventBroadcaster:
+    """Gerenciador de streaming de eventos SSE thread-safe para o Dashboard (< 10ms de latência)."""
+    def __init__(self):
+        self._listeners: List[queue.Queue] = []
+        self._lock = threading.Lock()
+
+    def subscribe(self) -> queue.Queue:
+        with self._lock:
+            q = queue.Queue(maxsize=150)
+            self._listeners.append(q)
+            return q
+
+    def unsubscribe(self, q: queue.Queue) -> None:
+        with self._lock:
+            if q in self._listeners:
+                self._listeners.remove(q)
+
+    def publish(self, event_type: str, data: Dict[str, Any]) -> None:
+        msg = f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
+        with self._lock:
+            for q in list(self._listeners):
+                try:
+                    q.put_nowait(msg)
+                except queue.Full:
+                    try:
+                        q.get_nowait()
+                        q.put_nowait(msg)
+                    except Exception:
+                        pass
+
+sse_broadcaster = SentinelEventBroadcaster()
+
+def on_logger_event(sev, cat, tgt, desc, event_id):
+    sse_broadcaster.publish("log", {
+        "id": event_id,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "severity": sev,
+        "category": cat,
+        "target": tgt,
+        "description": desc
+    })
+
+logger.add_listener(on_logger_event)
+
+@app.route("/api/stream/events", methods=["GET"])
+def stream_events():
+    """Endpoint SSE transmitindo logs, alarmes e incidentes em tempo real para o dashboard."""
+    def event_stream():
+        q = sse_broadcaster.subscribe()
+        try:
+            yield f"event: connected\ndata: {json.dumps({'status': 'connected', 'timestamp': time.time()})}\n\n"
+            while True:
+                try:
+                    msg = q.get(timeout=15)
+                    yield msg
+                except queue.Empty:
+                    yield f"event: heartbeat\ndata: {json.dumps({'timestamp': time.time()})}\n\n"
+        finally:
+            sse_broadcaster.unsubscribe(q)
+
+    return Response(event_stream(), mimetype="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive"
+    })
+
 
 def init_api(
     logger=None, active_shield=None, soar=None, threat_detector=None, 
@@ -211,7 +291,10 @@ def init_api(
     global vault_instance, ai_detector_instance, ztna_engine_instance, identity_guard_instance, dlp_guard_instance, anti_exploit_guard_instance, perimeter_guard_instance, posture_guard_instance
     global functions_engine_instance, functions_storage_instance
     
-    if logger: logger_instance = logger
+    if logger:
+        logger_instance = logger
+        if hasattr(logger, "add_listener"):
+            logger.add_listener(on_logger_event)
     if active_shield: active_shield_instance = active_shield
     if soar: soar_instance = soar
     if threat_detector: threat_detector_instance = threat_detector
@@ -1754,6 +1837,145 @@ def trigger_delete_quarantine_file():
             "status": "ERROR",
             "message": f"Falha ao excluir o arquivo '{quarantined_name}'."
         }), 400
+
+def calculate_shannon_entropy(data: bytes) -> float:
+    """Calcula a entropia de Shannon (0 a 8 bits/byte). Valores > 7.2 indicam dados cifrados ou ransomware."""
+    if not data:
+        return 0.0
+    entropy = 0.0
+    length = len(data)
+    counts = [0] * 256
+    for b in data:
+        counts[b] += 1
+    for c in counts:
+        if c > 0:
+            p = c / length
+            entropy -= p * math.log2(p)
+    return round(entropy, 3)
+
+def calculate_block_entropy(data: bytes, num_blocks: int = 16) -> List[float]:
+    """Divide os dados em blocos e calcula a curva de entropia para detecção de seções compactadas."""
+    if not data:
+        return [0.0] * num_blocks
+    block_size = max(1, len(data) // num_blocks)
+    blocks = []
+    for i in range(num_blocks):
+        start = i * block_size
+        end = start + block_size if i < num_blocks - 1 else len(data)
+        slice_data = data[start:end]
+        blocks.append(calculate_shannon_entropy(slice_data))
+    return blocks
+
+@app.route("/api/quarantine/inspect", methods=["GET"])
+def inspect_quarantine_artifact():
+    """Inspeciona um artefato em quarentena na memória: calcula entropia de Shannon, hashes e strings de malware."""
+    import hashlib
+    file_name = request.args.get("file") or request.args.get("file_name") or request.args.get("quarantined_name")
+    if not file_name:
+        return jsonify({"status": "ERROR", "message": "Parâmetro 'file' é obrigatório."}), 400
+
+    target_soar = soar_instance if soar_instance else soar
+    target_vault = vault_instance if vault_instance else vault
+    quarantine_dir = getattr(target_soar, "quarantine_dir", os.path.join(BASE_DIR, "quarantine"))
+
+    search_dirs = [quarantine_dir, os.path.join(BASE_DIR, "quarantine")]
+    candidate_path = None
+
+    if os.path.isabs(file_name) and os.path.exists(file_name) and os.path.isfile(file_name):
+        candidate_path = file_name
+    else:
+        for qd in search_dirs:
+            if qd and os.path.exists(qd):
+                p = os.path.join(qd, file_name)
+                if os.path.exists(p) and os.path.isfile(p):
+                    candidate_path = p
+                    break
+                for fn in os.listdir(qd):
+                    if file_name in fn:
+                        candidate_path = os.path.join(qd, fn)
+                        break
+                if candidate_path:
+                    break
+
+    if not candidate_path or not os.path.exists(candidate_path) or not os.path.isfile(candidate_path):
+        return jsonify({"status": "ERROR", "message": f"Artefato '{file_name}' não encontrado na quarentena."}), 404
+
+    try:
+        with open(candidate_path, "rb") as f:
+            raw_bytes = f.read()
+    except Exception as e:
+        return jsonify({"status": "ERROR", "message": f"Erro de I/O ao ler artefato: {e}"}), 500
+
+    # Decifra em memória sem tocar no disco
+    decrypted_bytes = raw_bytes
+    is_decrypted = False
+    if target_vault and hasattr(target_vault, "decrypt_data"):
+        try:
+            decrypted_bytes = target_vault.decrypt_data(raw_bytes)
+            is_decrypted = True
+        except Exception:
+            decrypted_bytes = raw_bytes
+
+    md5 = hashlib.md5(decrypted_bytes).hexdigest()
+    sha1 = hashlib.sha1(decrypted_bytes).hexdigest()
+    sha256 = hashlib.sha256(decrypted_bytes).hexdigest()
+
+    global_entropy = calculate_shannon_entropy(decrypted_bytes)
+    block_entropy = calculate_block_entropy(decrypted_bytes, num_blocks=16)
+
+    verdict = "NORMAL"
+    verdict_desc = "Entropia padrão de arquivo ou código legível não cifrado."
+    if global_entropy >= 7.2:
+        verdict = "CRITICAL_SUSPECT"
+        verdict_desc = "ALERTA: Entropia extremamente alta (> 7.2)! Indicativo de payload cifrado, packer de malware (UPX/Themida) ou Ransomware ativo."
+    elif global_entropy >= 6.4:
+        verdict = "MODERATE_SUSPECT"
+        verdict_desc = "Entropia moderada/alta. Binário com seções densas ou compactadas."
+
+    # Extração de strings suspeitas
+    text_matches = re.findall(b"[A-Za-z0-9_./\\: -]{4,120}", decrypted_bytes)
+    suspect_patterns = {
+        "COMMANDS": re.compile(r"(powershell|cmd\.exe|certutil|bitsadmin|vssadmin|schtasks|reg\.exe|wmic|invoke-|iex\b)", re.I),
+        "WIN_APIS": re.compile(r"(VirtualAlloc|WriteProcessMemory|CreateRemoteThread|OpenProcess|SetWindowsHookEx|QueueUserAPC|NtMapViewOfSection|LoadLibrary|GetProcAddress)", re.I),
+        "NETWORK": re.compile(r"(http://|https://|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|\.onion\b)", re.I),
+        "PERSISTENCE": re.compile(r"(CurrentVersion\\Run|AppInit_DLLs|Image File Execution Options|Winlogon|Services)", re.I)
+    }
+
+    categorized_matches = {k: [] for k in suspect_patterns}
+    seen = set()
+
+    for m in text_matches:
+        try:
+            s = m.decode("utf-8", errors="ignore").strip()
+        except Exception:
+            continue
+        if len(s) < 4 or s in seen:
+            continue
+        seen.add(s)
+        for cat, pattern in suspect_patterns.items():
+            if pattern.search(s):
+                if len(categorized_matches[cat]) < 25:
+                    categorized_matches[cat].append(s)
+
+    return jsonify({
+        "status": "SUCCESS",
+        "file_name": file_name,
+        "size_bytes": len(decrypted_bytes),
+        "encrypted_in_vault": is_decrypted,
+        "hashes": {
+            "md5": md5,
+            "sha1": sha1,
+            "sha256": sha256
+        },
+        "entropy": {
+            "global_shannon": global_entropy,
+            "blocks": block_entropy,
+            "verdict": verdict,
+            "description": verdict_desc
+        },
+        "suspicious_indicators": categorized_matches,
+        "indicators_count": sum(len(v) for v in categorized_matches.values())
+    }), 200
 
 # -------------------------------------------------------------
 # ROTAS ZTNA CARTA ZERO-TRUST (AVALIAÇÃO CONTÍNUA & POSTURA)

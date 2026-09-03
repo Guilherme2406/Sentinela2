@@ -370,6 +370,21 @@
             background: #080b11;
         }
 
+        /* ANIMAÇÃO DOS ARCOS BALÍSTICOS DE ATAQUE (CYBER WARFARE) */
+        @keyframes dashPulse {
+            to {
+                stroke-dashoffset: -40;
+            }
+        }
+        .attack-arc-path {
+            animation: dashPulse 2.2s linear infinite;
+            filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.9));
+        }
+        .attack-arc-warning {
+            animation: dashPulse 2.8s linear infinite;
+            filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.9));
+        }
+
         /* CONTROLES DO ACTIVE SHIELD (4 COLUNAS) */
         .controls-card {
             grid-column: span 4;
@@ -992,17 +1007,30 @@
             <div id="scanFileResult" style="margin-top: 0.65rem; font-size: 0.78rem;"></div>
         </div>
 
-<!-- MAPA GLOBAL 3D (WAR ROOM) -->
-        <div class="card map-card">
+        <!-- MAPA GLOBAL 3D (WAR ROOM & CYBER WARFARE) -->
+        <div class="card map-card" style="position: relative;">
             <div class="card-header">
                 <div class="card-title">
-                    <i class="fa-solid fa-earth-americas"></i> Radar Global de Geolocalização de Ataques
+                    <i class="fa-solid fa-earth-americas" style="color: var(--accent-cyan);"></i> Cyber Warfare — Radar Global de Ameaças &amp; Arcos Balísticos
                 </div>
                 <span style="font-size: 0.78rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace;">
-                    <i class="fa-solid fa-satellite-dish" style="color: var(--accent-green);"></i> TELEMETRIA 3D AO VIVO
+                    <i class="fa-solid fa-satellite-dish" style="color: var(--accent-green);"></i> WAR ROOM ATIVA
                 </span>
             </div>
-            <div id="threat-map"></div>
+            <div style="position: relative; width: 100%; height: 420px;">
+                <div id="threat-map" style="width: 100%; height: 100%;"></div>
+                
+                <!-- HUD FLUTUANTE TOP 5 PAÍSES OFENSORES -->
+                <div id="threatMapTopCountries" style="position: absolute; top: 12px; right: 12px; z-index: 1000; background: rgba(11, 16, 26, 0.88); backdrop-filter: blur(8px); border: 1px solid rgba(0, 240, 255, 0.3); border-radius: 8px; padding: 10px 14px; min-width: 190px; box-shadow: 0 4px 20px rgba(0,0,0,0.6); pointer-events: none;">
+                    <div style="font-size: 0.68rem; font-weight: 700; color: var(--accent-cyan); letter-spacing: 0.5px; margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;">
+                        <span><i class="fa-solid fa-crosshairs" style="color: var(--accent-red);"></i> TOP PAÍSES OFENSORES</span>
+                        <span id="threatsTotalBadge" style="background: rgba(239, 68, 68, 0.2); color: var(--accent-red); padding: 1px 5px; border-radius: 4px; font-size: 0.62rem;">0</span>
+                    </div>
+                    <div id="topCountriesList" style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #cbd5e1; display: flex; flex-direction: column; gap: 4px;">
+                        <span style="color: var(--text-muted); font-size: 0.68rem;">Aguardando telemetria…</span>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- CONTROLES DO ACTIVE SHIELD & AÇÕES ENTERPRISE -->
@@ -1352,6 +1380,31 @@
             <div class="modal-footer">
                 <span><i class="fa-solid fa-folder-open"></i> Arquivos restaurados são movidos para <code>Sentinela2/restored/</code></span>
                 <button onclick="closeQuarantineModal()" class="btn-action">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL FORENSE: INSPETOR DE ENTROPIA & STRINGS DE QUARENTENA -->
+    <div id="quarantineInspectModal" class="modal-overlay" style="z-index: 10000;">
+        <div class="modal-container" style="max-width: 840px; width: 95%;">
+            <div class="modal-header">
+                <div class="card-title" style="color: var(--accent-cyan);">
+                    <i class="fa-solid fa-microscope"></i> Análise Forense de Artefato em Memória RAM
+                </div>
+                <button onclick="closeQuarantineInspectModal()" style="background: transparent; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer;">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="modal-body" id="quarantineInspectContent" style="max-height: 75vh; overflow-y: auto;">
+                <!-- Preenchido dinamicamente via JS -->
+            </div>
+
+            <div class="modal-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 0.72rem; color: var(--text-muted);">
+                    <i class="fa-solid fa-memory" style="color: var(--accent-cyan);"></i> Execução 100% isolada em memória RAM — zero gravação no disco.
+                </span>
+                <button onclick="closeQuarantineInspectModal()" class="btn-action">Fechar</button>
             </div>
         </div>
     </div>
@@ -2526,28 +2579,69 @@
             }
         }
 
-        // Buscar Ameaças para o Mapa 3D / Radar
+        // --- CÁLCULO DE ARCOS BALÍSTICOS CURVOS (BÉZIER) PARA CYBER WARFARE ---
+        function calculateCurvedPath(p1, p2) {
+            // Curva parabólica suave entre atacante (p1) e host protegido (p2)
+            const midLat = (p1[0] + p2[0]) / 2 + Math.min(25, Math.max(-25, (p2[1] - p1[1]) * 0.16));
+            const midLon = (p1[1] + p2[1]) / 2;
+            const points = [];
+            for (let t = 0; t <= 1; t += 0.05) {
+                const lat = (1 - t) * (1 - t) * p1[0] + 2 * (1 - t) * t * midLat + t * t * p2[0];
+                const lon = (1 - t) * (1 - t) * p1[1] + 2 * (1 - t) * t * midLon + t * t * p2[1];
+                points.push([lat, lon]);
+            }
+            return points;
+        }
+
+        // Buscar Ameaças para o Mapa Cyber Warfare & Radar Balístico
         async function fetchThreatMap() {
             try {
                 const res = await fetch('/api/threat_map');
                 const data = await res.json();
                 const threats = data.threats || data.threat_events || [];
 
-                // Limpa marcadores antigos
+                // Limpa marcadores e arcos antigos
                 mapMarkers.forEach(m => map.removeLayer(m));
                 mapMarkers = [];
+
+                // Ponto do Host Protegido (São Paulo ou GeoIP local)
+                const hostCoord = (data.host_geo && data.host_geo.lat) ? [data.host_geo.lat, data.host_geo.lon] : [-23.5505, -46.6333];
+                const hostMarker = L.circleMarker(hostCoord, {
+                    color: '#10b981',
+                    fillColor: '#10b981',
+                    fillOpacity: 0.9,
+                    radius: 11,
+                    weight: 3
+                }).addTo(map);
+
+                hostMarker.bindPopup(`
+                    <div style="font-family: 'Inter', sans-serif; font-size: 12px; line-height: 1.4;">
+                        <strong style="color: #10b981; font-size: 13px;">🛡️ NÓ PROTEGIDO — SENTINELA XDR</strong><br>
+                        <b>Status:</b> Defesa Soberana Ativa (20 Camadas)<br>
+                        <b>Coordenadas:</b> ${hostCoord[0].toFixed(2)}, ${hostCoord[1].toFixed(2)}<br>
+                        <b>Postura:</b> 100% Blindado
+                    </div>
+                `);
+                mapMarkers.push(hostMarker);
+
+                const countryCounts = {};
 
                 threats.forEach(t => {
                     const lat = t.lat || (t.geo_location && t.geo_location.lat);
                     const lon = t.lon || (t.geo_location && t.geo_location.lon);
                     const level = (t.level || t.severity || 'WARNING').toUpperCase();
+                    const country = t.country || 'Desconhecido';
+
+                    countryCounts[country] = (countryCounts[country] || 0) + 1;
 
                     if (lat && lon) {
                         const markerColor = level === 'CRITICAL' ? '#ef4444' : (level === 'HIGH' ? '#f59e0b' : '#00f0ff');
+                        
+                        // 1. Marcador do Atacante no Mapa
                         const marker = L.circleMarker([lat, lon], {
                             color: markerColor,
                             fillColor: markerColor,
-                            fillOpacity: 0.75,
+                            fillOpacity: 0.8,
                             radius: level === 'CRITICAL' ? 9 : 7
                         }).addTo(map);
 
@@ -2555,15 +2649,60 @@
                             <div style="font-family: 'Inter', sans-serif; font-size: 12px; line-height: 1.4;">
                                 <strong style="color: ${markerColor}; font-size: 13px;">🚨 ${t.category || t.action || 'AMEAÇA DETECTADA'}</strong><br>
                                 <b>IP Origem:</b> <span style="font-family: 'JetBrains Mono', monospace; color: #fff;">${t.ip || t.source_ip}</span><br>
-                                <b>Local:</b> ${t.city || 'Desconhecido'}, <b>${t.country || 'Global'}</b><br>
+                                <b>Local:</b> ${t.city || 'Desconhecido'}, <b>${country}</b><br>
                                 <b>Provedor / ISP:</b> ${t.isp || 'Cyber Defense'}<br>
                                 <small style="color: #94a3b8; display: block; margin-top: 4px;">${t.msg || t.description || t.details || ''}</small>
                             </div>
                         `);
-
                         mapMarkers.push(marker);
+
+                        // 2. Arco Balístico de Ataque Conectando ao Host
+                        const arcCurve = calculateCurvedPath([lat, lon], hostCoord);
+                        const isCrit = level === 'CRITICAL';
+                        const arcLine = L.polyline(arcCurve, {
+                            color: isCrit ? '#ef4444' : (level === 'HIGH' ? '#f59e0b' : '#00f0ff'),
+                            weight: isCrit ? 2.5 : 1.8,
+                            opacity: 0.8,
+                            dashArray: '6, 10',
+                            className: isCrit ? 'attack-arc-path' : 'attack-arc-warning'
+                        }).addTo(map);
+                        mapMarkers.push(arcLine);
                     }
                 });
+
+                // 3. Atualizar Ranking do HUD Top 5 Países Ofensores
+                const sortedCountries = Object.entries(countryCounts).sort((a,b) => b[1] - a[1]).slice(0, 5);
+                const totalBadge = document.getElementById('threatsTotalBadge');
+                if (totalBadge) totalBadge.innerText = `${threats.length} bloqueios`;
+
+                const topContainer = document.getElementById('topCountriesList');
+                if (topContainer) {
+                    if (sortedCountries.length === 0) {
+                        topContainer.innerHTML = '<span style="color: var(--text-muted); font-size: 0.68rem;">Nenhuma ameaça ativa</span>';
+                    } else {
+                        const flagMap = {
+                            'Russia': '🇷🇺', 'Rússia': '🇷🇺', 'Russian Federation': '🇷🇺',
+                            'China': '🇨🇳',
+                            'United States': '🇺🇸', 'Estados Unidos': '🇺🇸', 'USA': '🇺🇸',
+                            'Netherlands': '🇳🇱', 'Holanda': '🇳🇱',
+                            'Germany': '🇩🇪', 'Alemanha': '🇩🇪',
+                            'Brazil': '🇧🇷', 'Brasil': '🇧🇷',
+                            'Iran': '🇮🇷', 'Irã': '🇮🇷',
+                            'North Korea': '🇰🇵', 'Coreia do Norte': '🇰🇵',
+                            'India': '🇮🇳', 'Índia': '🇮🇳',
+                            'United Kingdom': '🇬🇧', 'Reino Unido': '🇬🇧'
+                        };
+                        topContainer.innerHTML = sortedCountries.map(([country, count]) => {
+                            const flag = flagMap[country] || '🌐';
+                            return `
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <span>${flag} ${country}</span>
+                                    <span style="color: var(--accent-red); font-weight: 700;">${count}</span>
+                                </div>
+                            `;
+                        }).join('');
+                    }
+                }
             } catch (err) {
                 console.error("Erro ao carregar mapa de ameaças:", err);
             }
@@ -3632,9 +3771,12 @@
                                 </div>
                             </div>
 
-                            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.25rem;">
+                            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.25rem; flex-wrap: wrap;">
+                                <button onclick="inspectQuarantineArtifact('${item.name}')" class="btn-action" style="background: rgba(0, 240, 255, 0.15); border-color: var(--accent-cyan); color: var(--accent-cyan);">
+                                    <i class="fa-solid fa-microscope"></i> Inspecionar Forense
+                                </button>
                                 <button onclick="restoreQuarantinedFile('${item.name}')" class="btn-action" style="background: rgba(16, 185, 129, 0.15); border-color: var(--accent-green); color: var(--accent-green);">
-                                    <i class="fa-solid fa-rotate-left"></i> Restaurar (Liberar & Whitelist)
+                                    <i class="fa-solid fa-rotate-left"></i> Restaurar (Liberar &amp; Whitelist)
                                 </button>
                                 <button onclick="deleteQuarantinedFile('${item.name}')" class="btn-action" style="background: rgba(239, 68, 68, 0.15); border-color: var(--accent-red); color: var(--accent-red);">
                                     <i class="fa-solid fa-trash-can"></i> Excluir
@@ -3647,6 +3789,144 @@
                 container.innerHTML = html;
             } catch (err) {
                 container.innerHTML = `<div style="color: var(--accent-red); padding: 1rem;">Erro: ${err}</div>`;
+            }
+        }
+
+        function closeQuarantineInspectModal() {
+            const modal = document.getElementById('quarantineInspectModal');
+            if (modal) modal.style.display = 'none';
+        }
+
+        async function inspectQuarantineArtifact(fileName) {
+            const modal = document.getElementById('quarantineInspectModal');
+            const content = document.getElementById('quarantineInspectContent');
+            if (!modal || !content) return;
+
+            modal.style.display = 'flex';
+            content.innerHTML = `
+                <div style="text-align: center; padding: 3rem 1rem;">
+                    <i class="fa-solid fa-spinner fa-spin" style="font-size: 2.5rem; color: var(--accent-cyan); margin-bottom: 1rem;"></i>
+                    <h4 style="color: #fff;">Decifrando e Analisando Artefato em Memória RAM…</h4>
+                    <p style="color: var(--text-muted); font-size: 0.8rem;">Calculando Entropia de Shannon, Hashes e Mapeando APIs do Windows...</p>
+                </div>
+            `;
+
+            try {
+                const res = await fetch(`/api/quarantine/inspect?file=${encodeURIComponent(fileName)}`);
+                const d = await res.json();
+
+                if (d.status !== 'SUCCESS') {
+                    content.innerHTML = `<div style="color: var(--accent-red); padding: 1.5rem;"><i class="fa-solid fa-circle-exclamation"></i> ${d.message}</div>`;
+                    return;
+                }
+
+                const ent = d.entropy || {};
+                const isCrit = ent.verdict === 'CRITICAL_SUSPECT';
+                const isMod = ent.verdict === 'MODERATE_SUSPECT';
+                const verdictColor = isCrit ? 'var(--accent-red)' : (isMod ? 'var(--accent-warning)' : 'var(--accent-green)');
+                const verdictBg = isCrit ? 'rgba(239, 68, 68, 0.18)' : (isMod ? 'rgba(245, 158, 11, 0.18)' : 'rgba(16, 185, 129, 0.18)');
+
+                // Barras de entropia por bloco
+                const blocks = ent.blocks || [];
+                const blockBarsHtml = blocks.map((b, idx) => {
+                    const pct = Math.min(100, Math.round((b / 8.0) * 100));
+                    const barColor = b >= 7.2 ? '#ef4444' : (b >= 6.4 ? '#f59e0b' : '#00f0ff');
+                    return `
+                        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;" title="Bloco ${idx+1}: ${b.toFixed(2)} bits">
+                            <div style="height: 55px; width: 100%; background: rgba(255,255,255,0.03); border-radius: 3px; display: flex; align-items: flex-end; overflow: hidden;">
+                                <div style="height: ${pct}%; width: 100%; background: ${barColor}; transition: height 0.3s;"></div>
+                            </div>
+                            <span style="font-size: 0.55rem; color: var(--text-muted); font-family: 'JetBrains Mono';">${idx+1}</span>
+                        </div>
+                    `;
+                }).join('');
+
+                const ind = d.suspicious_indicators || {};
+                const renderCategory = (title, icon, color, list) => {
+                    if (!list || list.length === 0) return '';
+                    return `
+                        <div style="margin-top: 0.75rem;">
+                            <div style="font-size: 0.75rem; font-weight: 700; color: ${color}; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 6px;">
+                                <i class="${icon}"></i> ${title} (${list.length})
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                ${list.map(s => `<span style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px; color: #e2e8f0; word-break: break-all;">${s}</span>`).join('')}
+                            </div>
+                        </div>
+                    `;
+                };
+
+                content.innerHTML = `
+                    <!-- CABEÇALHO DO ARTEFATO -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.85rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;">
+                            <div>
+                                <span style="font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Artefato em Quarentena</span>
+                                <h3 style="font-family: 'JetBrains Mono', monospace; font-size: 0.95rem; color: #fff; margin: 2px 0 0 0;">${d.file_name}</h3>
+                            </div>
+                            <div style="text-align: right;">
+                                <span style="font-size: 0.7rem; background: rgba(0,240,255,0.1); border: 1px solid rgba(0,240,255,0.3); color: var(--accent-cyan); padding: 3px 8px; border-radius: 6px; font-family: 'JetBrains Mono';">
+                                    ${(d.size_bytes / 1024).toFixed(1)} KB (${d.size_bytes} bytes)
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD DE ENTROPIA DE SHANNON -->
+                    <div style="background: rgba(0,0,0,0.3); border: 1px solid ${verdictColor}; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.85rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                            <div style="font-size: 0.75rem; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 6px;">
+                                <i class="fa-solid fa-chart-simple" style="color: ${verdictColor};"></i> Entropia de Shannon Global:
+                                <span style="font-size: 1.1rem; color: ${verdictColor}; font-family: 'JetBrains Mono';">${ent.global_shannon} / 8.00 bits</span>
+                            </div>
+                            <span style="font-size: 0.7rem; font-weight: 800; background: ${verdictBg}; color: ${verdictColor}; border: 1px solid ${verdictColor}; padding: 3px 10px; border-radius: 6px; font-family: 'JetBrains Mono';">
+                                ${ent.verdict}
+                            </span>
+                        </div>
+                        <p style="font-size: 0.78rem; color: #cbd5e1; margin: 0 0 0.75rem 0;">${ent.description}</p>
+                        
+                        <div style="font-size: 0.68rem; color: var(--text-muted); margin-bottom: 0.35rem;">Distribuição de Entropia por Blocos (1 a 16):</div>
+                        <div style="display: flex; gap: 3px; width: 100%;">
+                            ${blockBarsHtml}
+                        </div>
+                    </div>
+
+                    <!-- HASHES FORENSES -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.85rem;">
+                        <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent-cyan); margin-bottom: 0.5rem;">
+                            <i class="fa-solid fa-fingerprint"></i> Hashes Criptográficos de Integridade
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 0.35rem; font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;">
+                            <div style="display: flex; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 4px;">
+                                <span style="color: var(--text-muted); width: 60px;">MD5:</span>
+                                <span style="color: #fff; word-break: break-all;">${d.hashes.md5}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 4px;">
+                                <span style="color: var(--text-muted); width: 60px;">SHA-1:</span>
+                                <span style="color: #fff; word-break: break-all;">${d.hashes.sha1}</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; background: rgba(0,0,0,0.3); padding: 3px 8px; border-radius: 4px;">
+                                <span style="color: var(--text-muted); width: 60px;">SHA-256:</span>
+                                <span style="color: var(--accent-cyan); word-break: break-all;">${d.hashes.sha256}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- INDICADORES SUSPEITOS EXTRAÍDOS -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.85rem 1rem;">
+                        <div style="font-size: 0.75rem; font-weight: 700; color: var(--accent-warning); display: flex; align-items: center; justify-content: space-between;">
+                            <span><i class="fa-solid fa-bug"></i> Strings &amp; APIs de Malware Extraídas</span>
+                            <span style="font-size: 0.7rem; color: var(--text-muted);">${d.indicators_count} detectados</span>
+                        </div>
+                        ${renderCategory('Comandos & Processos Suspeitos', 'fa-solid fa-terminal', '#f87171', ind.COMMANDS)}
+                        ${renderCategory('APIs Sensíveis do Windows (Injeção/Memória)', 'fa-solid fa-gears', '#fbbf24', ind.WIN_APIS)}
+                        ${renderCategory('Endereços de Rede & C2s (IPs/URLs)', 'fa-solid fa-globe', '#38bdf8', ind.NETWORK)}
+                        ${renderCategory('Chaves de Registro & Persistência', 'fa-solid fa-shield-virus', '#c084fc', ind.PERSISTENCE)}
+                        ${d.indicators_count === 0 ? '<div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.5rem;">Nenhuma string ou API maliciosa óbvia detectada no binário.</div>' : ''}
+                    </div>
+                `;
+            } catch (err) {
+                content.innerHTML = `<div style="color: var(--accent-red); padding: 1.5rem;">Erro de comunicação: ${err}</div>`;
             }
         }
 
@@ -4616,11 +4896,96 @@
             }
         }).catch(() => {});
 
+        // --- STREAMING SSE EM TEMPO REAL (< 10MS) ---
+        let _sseConnection = null;
+        let _sseReconnectTimer = null;
+
+        function initSSE() {
+            if (typeof EventSource === 'undefined') {
+                console.warn("[SSE] Navegador sem suporte a EventSource. Operando via polling.");
+                return;
+            }
+
+            try {
+                if (_sseConnection) {
+                    _sseConnection.close();
+                }
+
+                _sseConnection = new EventSource('/api/stream/events');
+
+                _sseConnection.addEventListener('connected', () => {
+                    console.log("⚡ [SSE] Canal soberano de eventos em tempo real conectado com sucesso!");
+                });
+
+                _sseConnection.addEventListener('log', (e) => {
+                    try {
+                        const log = JSON.parse(e.data);
+                        prependLiveLog(log);
+                    } catch (err) {}
+                });
+
+                _sseConnection.addEventListener('threat', (e) => {
+                    try {
+                        const threat = JSON.parse(e.data);
+                        playTacticalAlertSound(threat.severity || 'HIGH');
+                        fetchThreatMap();
+                    } catch (err) {}
+                });
+
+                _sseConnection.onerror = () => {
+                    if (_sseConnection) _sseConnection.close();
+                    _sseConnection = null;
+                    clearTimeout(_sseReconnectTimer);
+                    _sseReconnectTimer = setTimeout(initSSE, 5000);
+                };
+            } catch (err) {
+                console.warn("[SSE] Falha na conexão de streaming:", err);
+            }
+        }
+
+        function prependLiveLog(log) {
+            const tbody = document.querySelector('#logsTable tbody');
+            if (!tbody) return;
+
+            const sev = (log.severity || 'INFO').toUpperCase();
+            const sevColor = sev === 'CRITICAL' ? 'var(--accent-red)' : (sev === 'WARNING' ? 'var(--accent-warning)' : 'var(--accent-cyan)');
+            const sevBg = sev === 'CRITICAL' ? 'rgba(239, 68, 68, 0.15)' : (sev === 'WARNING' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(0, 240, 255, 0.1)');
+
+            const tr = document.createElement('tr');
+            tr.style.animation = 'fadeIn 0.35s ease-in-out';
+            if (sev === 'CRITICAL') tr.style.background = 'rgba(239, 68, 68, 0.08)';
+
+            tr.innerHTML = `
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-muted);">${log.timestamp || ''}</td>
+                <td><span style="background: ${sevBg}; color: ${sevColor}; font-weight: 700; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">${sev}</span></td>
+                <td style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600;">${log.category || ''}</td>
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #cbd5e1;">${log.target || ''}</td>
+                <td style="font-size: 0.75rem; color: #f8fafc;">${log.description || ''}</td>
+            `;
+
+            if (tbody.firstChild) {
+                tbody.insertBefore(tr, tbody.firstChild);
+            } else {
+                tbody.appendChild(tr);
+            }
+
+            while (tbody.children.length > 100) {
+                tbody.removeChild(tbody.lastChild);
+            }
+
+            if (sev === 'CRITICAL' || sev === 'HIGH') {
+                playTacticalAlertSound(sev);
+            }
+        }
+
+        // Inicializa canal de Streaming SSE em tempo real
+        initSSE();
+
         setInterval(fetchStatus, 4000);
         setInterval(fetchIntrusionSensors, 5000);
         setInterval(fetchThreatMap, 8000);
         setInterval(fetchSystemResources, 5000);
-        setInterval(fetchLogs, 3000);
+        setInterval(fetchLogs, 4000);
         fetchIdentityGuardStatus();
         setInterval(fetchIdentityGuardStatus, 5000);
         fetchDLPStatus();
