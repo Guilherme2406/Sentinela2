@@ -1,16 +1,16 @@
 # 🛡️ Relatório Completo de Testes — Sentinela2 XDR
 
-**Data da execução:** 02/09/2026 20:36:27  
+**Data da execução:** 02/09/2026 21:16:15  
 **Ambiente:** Python 3.14.7 — Windows 11  
-**Duração total:** 7.84s  
+**Duração total:** 8.13s  
 **Status Geral:** ✅ APROVADO (100% OPERACIONAL)
 
 ## 📊 Resumo Executivo
 
 | Métrica | Valor |
 |---|---|
-| Total de testes unitários | 190 (58 no test_suite + 132 no test_functions_engine) |
-| Aprovados | 190 |
+| Total de testes unitários | 193 (61 no test_suite + 132 no test_functions_engine) |
+| Aprovados | 193 |
 | Falhas | 0 |
 | Erros | 0 |
 | Pulados | 0 |
@@ -18,14 +18,26 @@
 
 **Escopo da validação:**
 
-- Import de todos os módulos do `sentinel_core/` (54 módulos soberanos, 0 falhas)
+- Import de todos os módulos do `sentinel_core/` (56 módulos soberanos, 0 falhas)
 - Validação das **20 Camadas Soberanas de Defesa Ativa**
+- **Melhorias de Performance & Banco SQLite**:
+  - Modo WAL (`PRAGMA journal_mode = WAL;`) e `PRAGMA synchronous = NORMAL;`
+  - Política de retenção e rotação de logs (`POST /api/logs/purge`)
+  - Compactação automática e sob demanda (`POST /api/logs/vacuum`)
+- **Resiliência & Auto-Cura**:
+  - `SentinelThreadWatchdog`: Supervisor autônomo de threads com auto-reanimação (Self-Healing)
+- **Notificações Nativas do Windows & System Tray**:
+  - Integração Toast de alarmes e eventos críticos no `tray_app.pyw`
+- **Recursos Táticos no Dashboard Principal**:
+  - Mini-gráfico de telemetria em tempo real direto na seção de Recursos do Host
+  - Seletor de Modo de Defesa no cabeçalho (`PADRÃO`, `ELEVADO`, `LOCKDOWN` de 1 clique)
+  - Alerta Sonoro Tático sintetizado via Web Audio API com controle de mudo
+  - Exportação de Relatório Forense Executivo com assinatura SHA-256 (`GET /api/reports/forensic`)
 - Modernização do **Functions Engine**:
   - `SentinelTelemetryCollector`: Ingestão contínua de métricas dos 20 motores de defesa e do SO
   - `TriggerWatchDaemon`: Observador autônomo com detecção de estados (`OK` / `PROBLEM`), histerese e log de incidentes
   - Avaliador de expressões com suporte a operadores lógicos compostos (`and`, `or`, `not` e parênteses)
-  - Endpoints REST de Alarmes (`/api/functions/alarms`, `/api/functions/presets`, `/api/functions/collect`)
-  - Painel de Alarmes e Biblioteca de Presets no `dashboard.html`
+  - Endpoints REST de Alarmes (`/api/functions/alarms`, `/api/functions/presets`, `/api/functions/collect`, `/api/functions/telemetry/summary`)
 - Cruzamento dos endpoints consumidos pelo `dashboard.html` com as rotas da API
 - Cruzamento dos handlers `onclick` do frontend com as funções JavaScript definidas
 - Smoke test em 60+ endpoints HTTP — 0 erros 5xx

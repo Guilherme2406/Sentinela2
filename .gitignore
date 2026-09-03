@@ -29,7 +29,7 @@ _smoke*
 _vd_out.txt
 
 # Banco de dados e estado de execução soberano (gerados localmente)
-sentinel_events.db
+sentinel_events.db*
 sentinel_runtime.json
 sentinel_daemon.log
 
