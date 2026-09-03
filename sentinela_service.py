@@ -257,7 +257,7 @@ class SentinelBackgroundDaemon:
             werkzeug_logger = logging.getLogger('werkzeug')
             werkzeug_logger.setLevel(logging.ERROR)
             try:
-                flask_app.run(host="0.0.0.0", port=self.port, debug=False, use_reloader=False)
+                flask_app.run(host="0.0.0.0", port=self.port, debug=False, use_reloader=False, threaded=True)
             except Exception as e:
                 logging.error(f"[SERVICE FLASK ERROR] {e}")
 

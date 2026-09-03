@@ -72,7 +72,7 @@ def start_api_server(port=5000):
         # Suprime logs excessivos de requisições GET periódicas do Werkzeug
         werkzeug_logger = logging.getLogger('werkzeug')
         werkzeug_logger.setLevel(logging.ERROR)
-        flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+        flask_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
     except Exception as e:
         logging.error(f"[API SERVER ERROR] {e}")
 

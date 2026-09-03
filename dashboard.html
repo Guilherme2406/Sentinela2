@@ -2581,6 +2581,9 @@
 
         // --- CÁLCULO DE ARCOS BALÍSTICOS CURVOS (BÉZIER) PARA CYBER WARFARE ---
         function calculateCurvedPath(p1, p2) {
+            if (!p1 || !p2 || isNaN(p1[0]) || isNaN(p1[1]) || isNaN(p2[0]) || isNaN(p2[1])) {
+                return [p1 || [0,0], p2 || [0,0]];
+            }
             // Curva parabólica suave entre atacante (p1) e host protegido (p2)
             const midLat = (p1[0] + p2[0]) / 2 + Math.min(25, Math.max(-25, (p2[1] - p1[1]) * 0.16));
             const midLon = (p1[1] + p2[1]) / 2;
@@ -2595,6 +2598,7 @@
 
         // Buscar Ameaças para o Mapa Cyber Warfare & Radar Balístico
         async function fetchThreatMap() {
+            if (typeof map === 'undefined' || !map) return;
             try {
                 const res = await fetch('/api/threat_map');
                 const data = await res.json();
@@ -4906,6 +4910,10 @@
                 return;
             }
 
+            if (_sseConnection && _sseConnection.readyState === 1) { // 1 = OPEN
+                return;
+            }
+
             try {
                 if (_sseConnection) {
                     _sseConnection.close();
@@ -4944,23 +4952,29 @@
         }
 
         function prependLiveLog(log) {
-            const tbody = document.querySelector('#logsTable tbody');
+            const tbody = document.getElementById('logs-table-body');
             if (!tbody) return;
 
+            // Remove aviso de nenhum evento se estiver presente
+            if (tbody.children.length === 1 && tbody.children[0].innerText.includes('Nenhum evento')) {
+                tbody.innerHTML = '';
+            }
+
             const sev = (log.severity || 'INFO').toUpperCase();
-            const sevColor = sev === 'CRITICAL' ? 'var(--accent-red)' : (sev === 'WARNING' ? 'var(--accent-warning)' : 'var(--accent-cyan)');
-            const sevBg = sev === 'CRITICAL' ? 'rgba(239, 68, 68, 0.15)' : (sev === 'WARNING' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(0, 240, 255, 0.1)');
+            let badgeClass = 'badge-info';
+            if (sev === 'CRITICAL' || sev === 'DISASTER') badgeClass = 'badge-danger';
+            else if (sev === 'WARNING' || sev === 'HIGH') badgeClass = 'badge-warning';
 
             const tr = document.createElement('tr');
             tr.style.animation = 'fadeIn 0.35s ease-in-out';
             if (sev === 'CRITICAL') tr.style.background = 'rgba(239, 68, 68, 0.08)';
 
             tr.innerHTML = `
-                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--text-muted);">${log.timestamp || ''}</td>
-                <td><span style="background: ${sevBg}; color: ${sevColor}; font-weight: 700; font-size: 0.65rem; padding: 2px 6px; border-radius: 4px;">${sev}</span></td>
-                <td style="font-size: 0.75rem; color: var(--accent-cyan); font-weight: 600;">${log.category || ''}</td>
-                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: #cbd5e1;">${log.target || ''}</td>
-                <td style="font-size: 0.75rem; color: #f8fafc;">${log.description || ''}</td>
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text-muted);">${log.timestamp || ''}</td>
+                <td><span class="badge ${badgeClass}">${sev}</span></td>
+                <td style="font-weight: 600; color: #fff;">${log.category || ''}</td>
+                <td style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem;">${log.target || '-'}</td>
+                <td style="color: #cbd5e1;">${log.description || log.msg || '-'}</td>
             `;
 
             if (tbody.firstChild) {
@@ -4971,6 +4985,11 @@
 
             while (tbody.children.length > 100) {
                 tbody.removeChild(tbody.lastChild);
+            }
+
+            const badgeCount = document.getElementById('logsCountBadge');
+            if (badgeCount) {
+                badgeCount.innerHTML = `<i class="fa-solid fa-database"></i> ${tbody.children.length} Evento${tbody.children.length !== 1 ? 's' : ''}`;
             }
 
             if (sev === 'CRITICAL' || sev === 'HIGH') {
