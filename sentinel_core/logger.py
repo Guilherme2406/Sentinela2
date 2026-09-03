@@ -19,7 +19,14 @@ class SecurityEventLogger:
         self._init_db()
 
     def _get_connection(self):
-        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn = sqlite3.connect(self.db_path, timeout=15)
+        try:
+            conn.execute("PRAGMA journal_mode = WAL;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+            conn.execute("PRAGMA cache_size = -8000;")
+            conn.execute("PRAGMA temp_store = MEMORY;")
+        except Exception:
+            pass
         return conn
 
     def _init_db(self):
@@ -39,6 +46,11 @@ class SecurityEventLogger:
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON security_events(timestamp DESC)")
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_severity ON security_events(severity)")
                     conn.execute("CREATE INDEX IF NOT EXISTS idx_events_category ON security_events(category)")
+        # Purge de inicialização para manter o banco leve e veloz
+        try:
+            self.rotate_and_purge_old_events()
+        except Exception:
+            pass
 
     def log_event(self, severity: str, category: str, target: str, description: str) -> int:
         with self._lock:
@@ -128,6 +140,43 @@ class SecurityEventLogger:
                     cursor = conn.cursor()
                     cursor.execute("DELETE FROM security_events")
                     return cursor.rowcount
+
+    def rotate_and_purge_old_events(self, max_records: int = 25000, days: int = 30) -> int:
+        """Limpa eventos antigos além do limite de retenção (por dias ou quantidade máxima)."""
+        with self._lock:
+            with closing(self._get_connection()) as conn:
+                with conn:
+                    cursor = conn.cursor()
+                    # 1. Deletar eventos anteriores ao período de retenção
+                    cursor.execute("DELETE FROM security_events WHERE timestamp < datetime('now', '-' || ? || ' days')", (days,))
+                    purged = cursor.rowcount or 0
+                    
+                    # 2. Deletar excedente além de 'max_records'
+                    cursor.execute("SELECT COUNT(*) FROM security_events")
+                    row = cursor.fetchone()
+                    total = row[0] if row else 0
+                    if total > max_records:
+                        excess = total - max_records
+                        cursor.execute("""
+                            DELETE FROM security_events WHERE id IN (
+                                SELECT id FROM security_events ORDER BY id ASC LIMIT ?
+                            )
+                        """, (excess,))
+                        purged += (cursor.rowcount or 0)
+                    return purged
+
+    def vacuum_database(self) -> bool:
+        """Executa VACUUM no banco SQLite para desfragmentar e devolver espaço ao disco do SO."""
+        with self._lock:
+            try:
+                conn = self._get_connection()
+                conn.isolation_level = None  # Requer autocommit
+                conn.execute("VACUUM;")
+                conn.close()
+                return True
+            except Exception as e:
+                logging.warning(f"[LOGGER] Erro ao executar VACUUM: {e}")
+                return False
 
     # Alias de compatibilidade
     def get_logs(self, category: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:

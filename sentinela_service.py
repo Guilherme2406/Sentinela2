@@ -53,6 +53,48 @@ from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
 
+
+class SentinelThreadWatchdog:
+    """Supervisiona a saúde de threads críticas do Sentinela XDR e as reanima automaticamente em caso de falha."""
+    def __init__(self, check_interval: float = 8.0):
+        self.check_interval = check_interval
+        self.supervised_threads = {}
+        self._running = False
+        self._lock = threading.Lock()
+        self.healed_count = 0
+
+    def register_thread(self, name: str, target, daemon: bool = True) -> threading.Thread:
+        with self._lock:
+            t = threading.Thread(target=target, name=name, daemon=daemon)
+            self.supervised_threads[name] = (target, daemon, t)
+            t.start()
+            logging.info(f"[WATCHDOG] Thread '{name}' registrada e iniciada sob supervisão autônoma.")
+            return t
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        t = threading.Thread(target=self._supervision_loop, name="SentinelWatchdogSupervisor", daemon=True)
+        t.start()
+
+    def _supervision_loop(self):
+        while self._running:
+            time.sleep(self.check_interval)
+            with self._lock:
+                for name, (target, daemon, t) in list(self.supervised_threads.items()):
+                    if not t.is_alive():
+                        logging.warning(f"[WATCHDOG] ALERTA: Thread crítica '{name}' sofreu parada inesperada! Reanimando...")
+                        new_t = threading.Thread(target=target, name=name, daemon=daemon)
+                        new_t.start()
+                        self.supervised_threads[name] = (target, daemon, new_t)
+                        self.healed_count += 1
+                        logging.info(f"[WATCHDOG] Thread '{name}' reanimada com sucesso (Total de autocuras: {self.healed_count}).")
+
+    def stop(self):
+        self._running = False
+
+
 class SentinelBackgroundDaemon:
     """Gerenciador do Ciclo de Vida do Serviço em Segundo Plano do Sentinela XDR."""
 
@@ -65,6 +107,7 @@ class SentinelBackgroundDaemon:
         self.honeypot = None
         self.nids = None
         self.tarpit_engine = None
+        self.watchdog = SentinelThreadWatchdog()
 
     def acquire_single_instance_lock(self, port: int = 59998) -> bool:
         """Garante que apenas uma instância do serviço Sentinela rode por vez."""
@@ -284,8 +327,8 @@ class SentinelBackgroundDaemon:
 
                 time.sleep(5)
 
-        self.monitor_thread = threading.Thread(target=run_defense_scans, daemon=True)
-        self.monitor_thread.start()
+        self.monitor_thread = self.watchdog.register_thread("SentinelDefenseScans", run_defense_scans, daemon=True)
+        self.watchdog.start()
 
         if blocking:
             try:

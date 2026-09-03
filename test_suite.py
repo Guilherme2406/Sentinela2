@@ -1173,6 +1173,68 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         self.assertIn("metrics", sum_json)
         self.assertGreater(sum_json.get("total_metrics", 0), 0)
 
+    def test_08_wal_retention_and_vacuum_endpoints(self):
+        """Valida modos WAL, retenção e compactação VACUUM do banco de dados SQLite."""
+        # 1. Testar endpoint de vacuum
+        res_vac = self.client.post("/api/logs/vacuum")
+        self.assertEqual(res_vac.status_code, 200)
+        self.assertEqual(res_vac.get_json().get("status"), "success")
+
+        # 2. Testar endpoint de purge
+        res_purge = self.client.post("/api/logs/purge", json={"days": 30, "max_records": 10000})
+        self.assertEqual(res_purge.status_code, 200)
+        self.assertEqual(res_purge.get_json().get("status"), "success")
+        self.assertIn("purged_events", res_purge.get_json())
+
+    def test_09_defense_mode_and_forensic_report_endpoints(self):
+        """Valida os modos de defesa (STANDARD, ELEVATED, LOCKDOWN) e exportação de relatório forense."""
+        # 1. Consulta inicial do modo
+        res_mode = self.client.get("/api/defense/mode")
+        self.assertEqual(res_mode.status_code, 200)
+        self.assertEqual(res_mode.get_json().get("status"), "success")
+
+        # 2. Alteração para ELEVATED
+        res_elevated = self.client.post("/api/defense/mode", json={"mode": "ELEVATED"})
+        self.assertEqual(res_elevated.status_code, 200)
+        self.assertEqual(res_elevated.get_json().get("mode"), "ELEVATED")
+
+        # 3. Alteração para STANDARD
+        res_std = self.client.post("/api/defense/mode", json={"mode": "STANDARD"})
+        self.assertEqual(res_std.status_code, 200)
+        self.assertEqual(res_std.get_json().get("mode"), "STANDARD")
+
+        # 4. Consulta de Relatório Forense Executivo
+        res_rep = self.client.get("/api/reports/forensic")
+        self.assertEqual(res_rep.status_code, 200)
+        rep_json = res_rep.get_json()
+        self.assertIn("title", rep_json)
+        self.assertIn("security_posture", rep_json)
+        self.assertIn("integrity_sha256", rep_json)
+        self.assertEqual(len(rep_json.get("integrity_sha256")), 64)
+
+    def test_10_thread_watchdog_auto_healing(self):
+        """Valida a capacidade de auto-cura (self-healing) do SentinelThreadWatchdog."""
+        from sentinela_service import SentinelThreadWatchdog
+        import time
+
+        watchdog = SentinelThreadWatchdog(check_interval=0.1)
+        run_counter = [0]
+
+        def flaky_worker():
+            run_counter[0] += 1
+            # Termina intencionalmente para acionar o watchdog
+            return
+
+        watchdog.register_thread("TestFlakyWorker", flaky_worker, daemon=True)
+        watchdog.start()
+
+        # Aguarda 2 ciclos de supervisão do watchdog
+        time.sleep(0.35)
+        watchdog.stop()
+
+        self.assertGreaterEqual(watchdog.healed_count, 1)
+        self.assertGreaterEqual(run_counter[0], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

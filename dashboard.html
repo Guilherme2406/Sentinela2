@@ -800,6 +800,22 @@
                 <i class="fa-solid fa-layer-group"></i> Arquitetura & Status
             </button>
 
+            <!-- CONTROLES TÁTICOS SOBERANOS -->
+            <div style="display: inline-flex; align-items: center; background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 4px; gap: 4px;">
+                <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; margin-right: 2px;"><i class="fa-solid fa-shield-halved"></i> POSTURA:</span>
+                <button id="btnModeStandard" onclick="setDefenseMode('STANDARD')" class="btn-action" style="padding: 2px 6px; font-size: 0.65rem; color: var(--accent-green); border-color: var(--accent-green); background: rgba(16,185,129,0.15);" title="Modo Padrão: Monitoramento heurístico equilibrado">PADRÃO</button>
+                <button id="btnModeElevated" onclick="setDefenseMode('ELEVATED')" class="btn-action" style="padding: 2px 6px; font-size: 0.65rem; color: var(--accent-warning); border-color: rgba(245,158,11,0.4);" title="Modo Elevado: Inspeção acelerada de scripts e amostragem de 1s">ELEVADO</button>
+                <button id="btnModeLockdown" onclick="setDefenseMode('LOCKDOWN')" class="btn-action" style="padding: 2px 6px; font-size: 0.65rem; color: var(--accent-red); border-color: rgba(239,68,68,0.4);" title="Modo Lockdown: Isolamento total de rede do host e snapshot instantâneo">LOCKDOWN</button>
+            </div>
+
+            <button id="btnAudioToggle" onclick="toggleTacticalAudio()" class="btn-action" style="color: var(--accent-cyan); border-color: rgba(0,240,255,0.3);" title="Alternar Alertas Sonoros Táticos">
+                <i class="fa-solid fa-volume-high" id="iconAudioToggle"></i> <span id="labelAudioToggle">Som ON</span>
+            </button>
+
+            <button onclick="exportForensicReport()" class="btn-action" style="color: #38bdf8; border-color: rgba(56,189,248,0.4); font-weight: 700;" title="Exportar Relatório Forense Executivo para Auditoria">
+                <i class="fa-solid fa-file-shield"></i> Relatório
+            </button>
+
             <button onclick="triggerManualScan()" class="btn-action">
                 <i class="fa-solid fa-radar"></i> Varredura
             </button>
@@ -932,6 +948,21 @@
                 <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.65rem 0.85rem;">
                     <div style="font-size: 0.68rem; color: var(--text-muted);"><i class="fa-solid fa-microchip" style="color: var(--accent-cyan);"></i> Frequência da CPU</div>
                     <div id="sysFreqDetail" style="font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; font-weight: 700; color: #fff; margin-top: 0.2rem;">-- MHz</div>
+                </div>
+            </div>
+
+            <!-- MINI-GRÁFICO DE TELEMETRIA AO VIVO NA TELA PRINCIPAL -->
+            <div style="margin-top: 0.85rem; background: rgba(0,0,0,0.3); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.65rem 0.85rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                    <span style="font-size: 0.7rem; font-weight: 700; color: var(--accent-cyan); display: flex; align-items: center; gap: 0.35rem;">
+                        <i class="fa-solid fa-chart-line"></i> OSCILAÇÃO DE TELEMETRIA DO HOST AO VIVO
+                    </span>
+                    <span style="font-size: 0.65rem; font-family: 'JetBrains Mono', monospace; color: var(--text-muted);">
+                        <span style="color: var(--accent-cyan);">■ CPU</span> &nbsp; <span style="color: var(--accent-purple);">■ RAM</span> (série temporal ativa)
+                    </span>
+                </div>
+                <div style="position: relative; height: 95px; width: 100%;">
+                    <canvas id="mainResourceTelemetryChart"></canvas>
                 </div>
             </div>
         </div>
@@ -2535,6 +2566,228 @@
             }
         }
 
+        // --- TELEMETRIA EM TEMPO REAL NA TELA PRINCIPAL (CHART.JS) ---
+        let _mainTelemetryChart = null;
+        const _mainChartHistory = {
+            labels: [],
+            cpu: [],
+            ram: []
+        };
+
+        function updateMainTelemetryChart(cpuVal, ramVal) {
+            const canvas = document.getElementById('mainResourceTelemetryChart');
+            if (!canvas || typeof Chart === 'undefined') return;
+
+            const now = new Date();
+            const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}`;
+            
+            _mainChartHistory.labels.push(timeStr);
+            _mainChartHistory.cpu.push(cpuVal);
+            _mainChartHistory.ram.push(ramVal);
+
+            if (_mainChartHistory.labels.length > 20) {
+                _mainChartHistory.labels.shift();
+                _mainChartHistory.cpu.shift();
+                _mainChartHistory.ram.shift();
+            }
+
+            if (_mainTelemetryChart) {
+                _mainTelemetryChart.data.labels = _mainChartHistory.labels;
+                _mainTelemetryChart.data.datasets[0].data = _mainChartHistory.cpu;
+                _mainTelemetryChart.data.datasets[1].data = _mainChartHistory.ram;
+                _mainTelemetryChart.update('none');
+            } else {
+                const ctx = canvas.getContext('2d');
+                _mainTelemetryChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: _mainChartHistory.labels,
+                        datasets: [
+                            {
+                                label: 'CPU (%)',
+                                data: _mainChartHistory.cpu,
+                                borderColor: '#00f0ff',
+                                backgroundColor: 'rgba(0, 240, 255, 0.08)',
+                                borderWidth: 2,
+                                tension: 0.35,
+                                fill: true,
+                                pointRadius: 2
+                            },
+                            {
+                                label: 'RAM (%)',
+                                data: _mainChartHistory.ram,
+                                borderColor: '#a855f7',
+                                backgroundColor: 'rgba(168, 85, 247, 0.05)',
+                                borderWidth: 2,
+                                tension: 0.35,
+                                fill: true,
+                                pointRadius: 2
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                backgroundColor: '#111622',
+                                borderColor: '#1e293b',
+                                borderWidth: 1
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: { color: 'rgba(255,255,255,0.03)' },
+                                ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' } }
+                            },
+                            y: {
+                                min: 0,
+                                max: 100,
+                                grid: { color: 'rgba(255,255,255,0.04)' },
+                                ticks: { color: '#64748b', font: { size: 9, family: 'JetBrains Mono' }, stepSize: 25 }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // --- SISTEMA DE ÁUDIO TÁTICO (WEB AUDIO API NATIVA) ---
+        let _tacticalAudioEnabled = true;
+        let _audioCtx = null;
+
+        function toggleTacticalAudio() {
+            _tacticalAudioEnabled = !_tacticalAudioEnabled;
+            const btn = document.getElementById('btnAudioToggle');
+            const icon = document.getElementById('iconAudioToggle');
+            const label = document.getElementById('labelAudioToggle');
+            if (_tacticalAudioEnabled) {
+                if (icon) icon.className = 'fa-solid fa-volume-high';
+                if (label) label.innerText = 'Som ON';
+                if (btn) btn.style.color = 'var(--accent-cyan)';
+                playTacticalAlertSound('INFO');
+            } else {
+                if (icon) icon.className = 'fa-solid fa-volume-xmark';
+                if (label) label.innerText = 'Som MUDO';
+                if (btn) btn.style.color = 'var(--text-muted)';
+            }
+        }
+
+        function playTacticalAlertSound(type = 'INFO') {
+            if (!_tacticalAudioEnabled) return;
+            try {
+                const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtxClass) return;
+                if (!_audioCtx) _audioCtx = new AudioCtxClass();
+                if (_audioCtx.state === 'suspended') {
+                    _audioCtx.resume();
+                }
+
+                const osc = _audioCtx.createOscillator();
+                const gain = _audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(_audioCtx.destination);
+
+                const now = _audioCtx.currentTime;
+                if (type === 'CRITICAL' || type === 'DISASTER' || type === 'LOCKDOWN') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(880, now);
+                    osc.frequency.exponentialRampToValueAtTime(440, now + 0.18);
+                    gain.gain.setValueAtTime(0.08, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else if (type === 'WARNING' || type === 'ELEVATED') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(587.33, now);
+                    osc.frequency.linearRampToValueAtTime(880, now + 0.12);
+                    gain.gain.setValueAtTime(0.05, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+                    osc.start(now);
+                    osc.stop(now + 0.2);
+                } else {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(740, now);
+                    gain.gain.setValueAtTime(0.03, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+                    osc.start(now);
+                    osc.stop(now + 0.12);
+                }
+            } catch (e) {}
+        }
+
+        // --- MODO DE DEFESA ATIVA (POSTURA SOBERANA) ---
+        async function fetchDefenseMode() {
+            try {
+                const res = await fetch('/api/defense/mode');
+                const d = await res.json();
+                if (d.status === 'success') {
+                    updateDefenseModeUI(d.mode);
+                }
+            } catch (e) {}
+        }
+
+        function updateDefenseModeUI(mode) {
+            const btnStd = document.getElementById('btnModeStandard');
+            const btnElv = document.getElementById('btnModeElevated');
+            const btnLck = document.getElementById('btnModeLockdown');
+            if (!btnStd || !btnElv || !btnLck) return;
+
+            btnStd.style.background = mode === 'STANDARD' ? 'rgba(16,185,129,0.3)' : 'transparent';
+            btnElv.style.background = mode === 'ELEVATED' ? 'rgba(245,158,11,0.3)' : 'transparent';
+            btnLck.style.background = mode === 'LOCKDOWN' ? 'rgba(239,68,68,0.4)' : 'transparent';
+        }
+
+        async function setDefenseMode(mode) {
+            if (mode === 'LOCKDOWN') {
+                const ok = confirm('⚠️ ATENÇÃO: Deseja acionar o modo LOCKDOWN?\nIsso isolará imediatamente a conectividade de rede do host via ZTNA CARTA e criará um snapshot de rollback.');
+                if (!ok) return;
+            }
+            try {
+                const res = await fetch('/api/defense/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+                const d = await res.json();
+                if (d.status === 'success') {
+                    updateDefenseModeUI(d.mode);
+                    playTacticalAlertSound(mode === 'LOCKDOWN' ? 'LOCKDOWN' : (mode === 'ELEVATED' ? 'ELEVATED' : 'INFO'));
+                    alert(`🛡️ Postura Atualizada: ${d.mode}\n${d.message}`);
+                    fetchStatus();
+                } else {
+                    alert('Erro: ' + (d.message || d.error));
+                }
+            } catch (e) {
+                alert('Erro de comunicação: ' + e);
+            }
+        }
+
+        // --- EXPORTAÇÃO DE RELATÓRIO FORENSE (1-CLIQUE) ---
+        async function exportForensicReport() {
+            try {
+                const res = await fetch('/api/reports/forensic');
+                const data = await res.json();
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                const ts = new Date().toISOString().replace(/[:.]/g, '-');
+                a.href = url;
+                a.download = `sentinela_relatorio_forense_${ts}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                playTacticalAlertSound('INFO');
+            } catch (e) {
+                alert('Erro ao gerar relatório forense: ' + e);
+            }
+        }
+
         // Telemetria de Recursos do Host (Tempo Real)
         async function fetchSystemResources() {
             try {
@@ -2551,6 +2804,9 @@
                 setPct('sysCpuPct', 'sysCpuBar', d.cpu_percent || 0);
                 setPct('sysMemPct', 'sysMemBar', d.memory_percent || 0);
                 setPct('sysDiskPct', 'sysDiskBar', d.disk_percent || 0);
+
+                // Atualizar mini-gráfico ao vivo na tela principal
+                updateMainTelemetryChart(d.cpu_percent || 0, d.memory_percent || 0);
 
                 const elCpuDetail = document.getElementById('sysCpuDetail');
                 if (elCpuDetail) elCpuDetail.innerText = `${d.cpu_count || '-'} núcleos lógicos`;
@@ -4306,6 +4562,8 @@
         setInterval(fetchPostureStatus, 5000);
         loadFunctionsStatus();
         setInterval(loadFunctionsStatus, 6000);
+        fetchDefenseMode();
+        setInterval(fetchDefenseMode, 5000);
 
         // --- FUNCTIONS ENGINE & LIVE TELEMETRY OBSERVABILITY ---
         let _functionsDebounce = null;

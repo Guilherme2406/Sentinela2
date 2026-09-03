@@ -65,10 +65,14 @@ class SentinelTrayApp:
             3000
         )
 
+        # Rastreamento de alertas para notificações nativas do Windows
+        self._seen_problem_alarms = set()
+        self._last_alerted_log_id = 0
+
         # Timer para sincronizar status e verificar novas ameaças
         self.status_timer = QTimer()
         self.status_timer.timeout.connect(self._check_service_health)
-        self.status_timer.start(4000)
+        self.status_timer.start(3500)
 
     def get_api_url(self) -> str:
         """Obtém a URL da API em execução a partir do runtime file ou fallback local."""
@@ -266,15 +270,41 @@ class SentinelTrayApp:
             QMessageBox.information(None, "Termos de Uso", "O Sentinela XDR opera em conformidade com as leis de soberania de dados e privacidade.")
 
     def _check_service_health(self):
-        """Verifica periodicamente a saúde da API do Sentinela."""
+        """Verifica periodicamente a saúde da API do Sentinela e emite Toasts para novos alarmes."""
+        api_url = self.get_api_url()
         try:
-            url = f"{self.get_api_url()}/api/stats"
+            url = f"{api_url}/api/stats"
             req = urllib.request.Request(url)
             with urllib.request.urlopen(req, timeout=2) as resp:
                 if resp.status == 200:
-                    self.tray.setToolTip(f"SENTINEL XDR | Blindagem Ativa ({self.get_api_url()})")
+                    self.tray.setToolTip(f"SENTINEL XDR | Blindagem Ativa ({api_url})")
         except Exception:
             self.tray.setToolTip("SENTINEL XDR | Reiniciando Serviços...")
+
+        # Checagem de Alarmes do Functions Engine
+        try:
+            alarms_url = f"{api_url}/api/functions/alarms"
+            req_a = urllib.request.Request(alarms_url)
+            with urllib.request.urlopen(req_a, timeout=2) as resp:
+                if resp.status == 200:
+                    data = json.loads(resp.read().decode())
+                    current_problems = set()
+                    for r in data.get("rules", []):
+                        if r.get("status") == "PROBLEM":
+                            rule_id = r.get("id")
+                            current_problems.add(rule_id)
+                            if rule_id not in self._seen_problem_alarms:
+                                sev = r.get("severity", "HIGH")
+                                icon_type = QSystemTrayIcon.MessageIcon.Critical if sev in ("DISASTER", "HIGH") else QSystemTrayIcon.MessageIcon.Warning
+                                self.tray.showMessage(
+                                    f"🚨 SENTINELA ALARME [{sev}]: {r.get('name')}",
+                                    f"Gatilho ativo: {r.get('expression')}\nSeveridade: {sev}",
+                                    icon_type,
+                                    6000
+                                )
+                    self._seen_problem_alarms = current_problems
+        except Exception:
+            pass
 
     def quit_app(self):
         """Confirma e encerra o aplicativo da bandeja e os serviços de defesa."""
