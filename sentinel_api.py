@@ -659,14 +659,18 @@ def manage_defense_mode():
         current_defense_mode = mode
         if mode == "LOCKDOWN":
             target_logger.log_event("CRITICAL", "TACTICAL_DEFENSE", "HOST_LOCKDOWN", "Modo LOCKDOWN ativado pelo operador: Isolamento total de rede acionado.")
-            if target_ztna and hasattr(target_ztna, "quarantine_host"):
-                target_ztna.quarantine_host(reason="Ativação de Modo LOCKDOWN Soberano")
+            if target_ztna and hasattr(target_ztna, "enforce_host_isolation"):
+                target_ztna.enforce_host_isolation(reason="Ativação de Modo LOCKDOWN Soberano pelo Operador")
         elif mode == "ELEVATED":
             target_logger.log_event("WARNING", "TACTICAL_DEFENSE", "ELEVATED_POSTURE", "Modo ELEVADO ativado: Varreduras contínuas e amostragem acelerada.")
+            if target_ztna and hasattr(target_ztna, "restore_host_isolation") and getattr(target_ztna, "is_host_isolated", False):
+                target_ztna.restore_host_isolation()
         else:
             target_logger.log_event("INFO", "TACTICAL_DEFENSE", "STANDARD_POSTURE", "Modo PADRÃO ativado: Operação heurística normal.")
-            if target_ztna and hasattr(target_ztna, "remove_quarantine"):
-                target_ztna.remove_quarantine()
+            if target_ztna and hasattr(target_ztna, "restore_host_isolation") and getattr(target_ztna, "is_host_isolated", False):
+                target_ztna.restore_host_isolation()
+            if target_ztna and hasattr(target_ztna, "reset_risk_posture"):
+                target_ztna.reset_risk_posture()
 
         return jsonify({
             "status": "success",

@@ -385,6 +385,80 @@
             filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.9));
         }
 
+        /* SELETOR DE POSTURA TÁTICA SEGMENTADO */
+        .posture-segmented-control {
+            display: inline-flex;
+            align-items: center;
+            background: rgba(11, 15, 26, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 2px 3px;
+            gap: 2px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+        }
+
+        .posture-label {
+            font-size: 0.62rem;
+            color: #64748b;
+            font-weight: 700;
+            padding: 0 5px 0 4px;
+            letter-spacing: 0.5px;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+        }
+
+        .posture-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            padding: 3px 9px;
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.3px;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+            line-height: 1.3;
+        }
+
+        .posture-btn:hover {
+            color: #cbd5e1;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .posture-btn.active-standard {
+            background: rgba(16, 185, 129, 0.16) !important;
+            border-color: rgba(16, 185, 129, 0.6) !important;
+            color: #10b981 !important;
+            box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+        }
+
+        .posture-btn.active-elevated {
+            background: rgba(245, 158, 11, 0.18) !important;
+            border-color: rgba(245, 158, 11, 0.7) !important;
+            color: #f59e0b !important;
+            box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+        }
+
+        .posture-btn.active-lockdown {
+            background: rgba(239, 68, 68, 0.25) !important;
+            border-color: #ef4444 !important;
+            color: #ef4444 !important;
+            box-shadow: 0 0 14px rgba(239, 68, 68, 0.6);
+            animation: pulseLockdown 2s infinite ease-in-out;
+        }
+
+        @keyframes pulseLockdown {
+            0%, 100% { box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.85); }
+        }
+
         /* CONTROLES DO ACTIVE SHIELD (4 COLUNAS) */
         .controls-card {
             grid-column: span 4;
@@ -818,12 +892,12 @@
                 <i class="fa-solid fa-layer-group"></i> Arquitetura & Status
             </button>
 
-            <!-- CONTROLES TÁTICOS SOBERANOS -->
-            <div style="display: inline-flex; align-items: center; background: rgba(0,0,0,0.5); border: 1px solid var(--border-color); border-radius: 6px; padding: 2px 4px; gap: 4px;">
-                <span style="font-size: 0.65rem; color: var(--text-muted); font-weight: 700; margin-right: 2px;"><i class="fa-solid fa-shield-halved"></i> POSTURA:</span>
-                <button id="btnModeStandard" onclick="setDefenseMode('STANDARD')" class="btn-action" style="padding: 2px 6px; font-size: 0.65rem; color: var(--accent-green); border-color: var(--accent-green); background: rgba(16,185,129,0.15);" title="Modo Padrão: Monitoramento heurístico equilibrado">PADRÃO</button>
-                <button id="btnModeElevated" onclick="setDefenseMode('ELEVATED')" class="btn-action" style="padding: 2px 6px; font-size: 0.65rem; color: var(--accent-warning); border-color: rgba(245,158,11,0.4);" title="Modo Elevado: Inspeção acelerada de scripts e amostragem de 1s">ELEVADO</button>
-                <button id="btnModeLockdown" onclick="setDefenseMode('LOCKDOWN')" class="btn-action" style="padding: 2px 6px; font-size: 0.65rem; color: var(--accent-red); border-color: rgba(239,68,68,0.4);" title="Modo Lockdown: Isolamento total de rede do host e snapshot instantâneo">LOCKDOWN</button>
+            <!-- CONTROLES TÁTICOS SOBERANOS: SELETOR DE POSTURA -->
+            <div class="posture-segmented-control" title="Seletor de Postura de Defesa Soberana em 1-Clique">
+                <span class="posture-label"><i class="fa-solid fa-shield-halved"></i> POSTURA:</span>
+                <button id="btnModeStandard" onclick="setDefenseMode('STANDARD')" class="posture-btn active-standard" title="Modo Padrão: Monitoramento heurístico e ZTNA adaptativo">● PADRÃO</button>
+                <button id="btnModeElevated" onclick="setDefenseMode('ELEVATED')" class="posture-btn" title="Modo Elevado: Inspeção acelerada de scripts e amostragem de 1s">ELEVADO</button>
+                <button id="btnModeLockdown" onclick="setDefenseMode('LOCKDOWN')" class="posture-btn" title="Modo Lockdown: Isolamento total de rede do host e snapshot instantâneo">LOCKDOWN</button>
             </div>
 
             <button id="btnAudioToggle" onclick="toggleTacticalAudio()" class="btn-action" style="color: var(--accent-cyan); border-color: rgba(0,240,255,0.3);" title="Alternar Alertas Sonoros Táticos">
@@ -2873,6 +2947,65 @@
             } catch (e) {}
         }
 
+        // --- NOTIFICAÇÕES TÁTICAS FLUTUANTES (TOAST HUD) ---
+        function showTacticalToast(title, message, type = 'info') {
+            let container = document.getElementById('tacticalToastContainer');
+            if (!container) {
+                container = document.createElement('div');
+                container.id = 'tacticalToastContainer';
+                container.style.cssText = 'position: fixed; top: 1.25rem; right: 1.25rem; z-index: 999999; display: flex; flex-direction: column; gap: 0.5rem; pointer-events: none;';
+                document.body.appendChild(container);
+            }
+
+            const toast = document.createElement('div');
+            const colorMap = {
+                success: { border: '#10b981', icon: 'fa-shield-check', titleColor: '#10b981' },
+                warning: { border: '#f59e0b', icon: 'fa-triangle-exclamation', titleColor: '#fbbf24' },
+                error: { border: '#ef4444', icon: 'fa-circle-xmark', titleColor: '#f87171' },
+                lockdown: { border: '#ef4444', icon: 'fa-lock', titleColor: '#ef4444' },
+                info: { border: '#00f0ff', icon: 'fa-circle-info', titleColor: '#38bdf8' }
+            };
+            const c = colorMap[type] || colorMap.info;
+
+            toast.style.cssText = `
+                min-width: 300px; max-width: 420px;
+                background: rgba(11, 15, 26, 0.95);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-left: 4px solid ${c.border};
+                border-radius: 8px;
+                padding: 0.75rem 1rem;
+                color: #fff;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.7), 0 0 15px rgba(0,0,0,0.5);
+                backdrop-filter: blur(12px);
+                display: flex; gap: 0.75rem; align-items: flex-start;
+                pointer-events: auto;
+                transform: translateX(120%);
+                opacity: 0;
+                transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+                font-family: 'Inter', sans-serif;
+            `;
+
+            toast.innerHTML = `
+                <i class="fa-solid ${c.icon}" style="color: ${c.border}; font-size: 1.15rem; margin-top: 2px;"></i>
+                <div style="flex: 1;">
+                    <div style="font-weight: 700; font-size: 0.82rem; color: ${c.titleColor};">${title}</div>
+                    <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px; line-height: 1.35;">${message}</div>
+                </div>
+            `;
+
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.style.transform = 'translateX(0)';
+                toast.style.opacity = '1';
+            });
+
+            setTimeout(() => {
+                toast.style.transform = 'translateX(120%)';
+                toast.style.opacity = '0';
+                setTimeout(() => toast.remove(), 320);
+            }, 3800);
+        }
+
         // --- MODO DE DEFESA ATIVA (POSTURA SOBERANA) ---
         async function fetchDefenseMode() {
             try {
@@ -2890,45 +3023,31 @@
             const btnLck = document.getElementById('btnModeLockdown');
             if (!btnStd || !btnElv || !btnLck) return;
 
-            // Reset geral
-            btnStd.style.background = 'transparent';
-            btnStd.style.borderColor = 'rgba(16, 185, 129, 0.3)';
-            btnStd.style.boxShadow = 'none';
+            // Remove todas as classes de ativo e reseta textos
+            btnStd.classList.remove('active-standard', 'active-elevated', 'active-lockdown');
+            btnElv.classList.remove('active-standard', 'active-elevated', 'active-lockdown');
+            btnLck.classList.remove('active-standard', 'active-elevated', 'active-lockdown');
+
             btnStd.innerHTML = 'PADRÃO';
-
-            btnElv.style.background = 'transparent';
-            btnElv.style.borderColor = 'rgba(245, 158, 11, 0.3)';
-            btnElv.style.boxShadow = 'none';
             btnElv.innerHTML = 'ELEVADO';
-
-            btnLck.style.background = 'transparent';
-            btnLck.style.borderColor = 'rgba(239, 68, 68, 0.3)';
-            btnLck.style.boxShadow = 'none';
             btnLck.innerHTML = 'LOCKDOWN';
 
             if (mode === 'ELEVATED') {
-                btnElv.style.background = 'rgba(245, 158, 11, 0.25)';
-                btnElv.style.borderColor = 'var(--accent-warning)';
-                btnElv.style.boxShadow = '0 0 10px rgba(245, 158, 11, 0.4)';
+                btnElv.classList.add('active-elevated');
                 btnElv.innerHTML = '● ELEVADO';
             } else if (mode === 'LOCKDOWN') {
-                btnLck.style.background = 'rgba(239, 68, 68, 0.35)';
-                btnLck.style.borderColor = 'var(--accent-red)';
-                btnLck.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.6)';
-                btnLck.innerHTML = '🚨 LOCKDOWN';
+                btnLck.classList.add('active-lockdown');
+                btnLck.innerHTML = '<i class="fa-solid fa-lock" style="font-size: 0.65rem;"></i> LOCKDOWN';
             } else {
-                btnStd.style.background = 'rgba(16, 185, 129, 0.2)';
-                btnStd.style.borderColor = 'var(--accent-green)';
-                btnStd.style.boxShadow = '0 0 10px rgba(16, 185, 129, 0.4)';
+                btnStd.classList.add('active-standard');
                 btnStd.innerHTML = '● PADRÃO';
             }
         }
 
         async function setDefenseMode(mode) {
-            if (mode === 'LOCKDOWN') {
-                const ok = confirm('⚠️ ATENÇÃO: Deseja acionar o modo LOCKDOWN?\nIsso isolará imediatamente a conectividade de rede do host via ZTNA CARTA e criará um snapshot de rollback.');
-                if (!ok) return;
-            }
+            // Atualização visual imediata otimista
+            updateDefenseModeUI(mode);
+
             try {
                 const res = await fetch('/api/defense/mode', {
                     method: 'POST',
@@ -2938,14 +3057,18 @@
                 const d = await res.json();
                 if (d.status === 'success') {
                     updateDefenseModeUI(d.mode);
-                    playTacticalAlertSound(mode === 'LOCKDOWN' ? 'LOCKDOWN' : (mode === 'ELEVATED' ? 'ELEVATED' : 'INFO'));
-                    alert(`🛡️ Postura Atualizada: ${d.mode}\n${d.message}`);
+                    const toastType = d.mode === 'LOCKDOWN' ? 'lockdown' : (d.mode === 'ELEVATED' ? 'warning' : 'success');
+                    const toastTitle = d.mode === 'LOCKDOWN' ? '🚨 MODO LOCKDOWN ATIVADO' : (d.mode === 'ELEVATED' ? '⚠️ POSTURA ELEVADA' : '🛡️ POSTURA PADRÃO RESTAURADA');
+                    showTacticalToast(toastTitle, d.message, toastType);
+                    playTacticalAlertSound(d.mode === 'LOCKDOWN' ? 'LOCKDOWN' : (d.mode === 'ELEVATED' ? 'ELEVATED' : 'INFO'));
                     fetchStatus();
                 } else {
-                    alert('Erro: ' + (d.message || d.error));
+                    showTacticalToast('Erro na Troca de Postura', d.message || d.error, 'error');
+                    fetchDefenseMode();
                 }
             } catch (e) {
-                alert('Erro de comunicação: ' + e);
+                showTacticalToast('Falha de Comunicação', String(e), 'error');
+                fetchDefenseMode();
             }
         }
 
