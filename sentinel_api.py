@@ -352,6 +352,127 @@ def init_sentinel_services():
     except Exception as e:
         logger.log_event("ERROR", "SYSTEM_INIT", "START_FAILED", str(e))
 
+_defense_loop_started = False
+_defense_loop_lock = threading.Lock()
+
+def start_autonomous_defense_loop():
+    """Garante que todas as 20 camadas soberanas de defesa executem varreduras ativas e contínuas em paralelo."""
+    global _defense_loop_started
+    with _defense_loop_lock:
+        if _defense_loop_started:
+            return
+        _defense_loop_started = True
+
+    init_sentinel_services()
+
+    def run_all_engines_cycle():
+        cycle = 0
+        while True:
+            cycle += 1
+            try:
+                # 1. Integridade de Arquivos (FIM)
+                target_fim = fim_instance if fim_instance else fim
+                if target_fim and hasattr(target_fim, "scan"):
+                    target_fim.scan()
+            except Exception as e:
+                logging.debug(f"[FIM ERROR] {e}")
+
+            try:
+                # 2. Processos e Análise de IA Zero-Day
+                target_proc = proc_monitor_instance if proc_monitor_instance else proc_monitor
+                if target_proc and hasattr(target_proc, "scan_processes"):
+                    target_proc.scan_processes()
+            except Exception as e:
+                logging.debug(f"[PROC ERROR] {e}")
+
+            try:
+                # 3. Análise Comportamental Contínua com IA
+                target_ai = ai_detector_instance if ai_detector_instance else ai_predictor
+                if target_ai and hasattr(target_ai, "scan_anomalies"):
+                    target_ai.scan_anomalies()
+            except Exception as e:
+                logging.debug(f"[AI ERROR] {e}")
+
+            try:
+                # 4. Monitoramento de Rede e Conexões Suspeitas
+                target_net = net_monitor_instance if net_monitor_instance else net_monitor
+                if target_net and hasattr(target_net, "scan_network_connections"):
+                    target_net.scan_network_connections()
+            except Exception as e:
+                logging.debug(f"[NET ERROR] {e}")
+
+            try:
+                # 5. EDR Auto-Remediação
+                target_edr = edr_guard_instance if edr_guard_instance else edr_guard
+                if target_edr and hasattr(target_edr, "auto_remediate"):
+                    target_edr.auto_remediate()
+            except Exception as e:
+                logging.debug(f"[EDR ERROR] {e}")
+
+            try:
+                # 6. Integridade de Kernel
+                target_kernel = kernel_monitor_instance if kernel_monitor_instance else kernel_monitor
+                if target_kernel and hasattr(target_kernel, "inspect_system_integrity"):
+                    target_kernel.inspect_system_integrity()
+            except Exception as e:
+                logging.debug(f"[KERNEL ERROR] {e}")
+
+            try:
+                # 7. ZTNA CARTA Decay de Score de Risco
+                target_ztna = ztna_engine_instance if ztna_engine_instance else ztna_engine
+                if target_ztna and hasattr(target_ztna, "decay_risk_score"):
+                    target_ztna.decay_risk_score()
+            except Exception as e:
+                logging.debug(f"[ZTNA ERROR] {e}")
+
+            try:
+                # 8. Ingestão de Telemetria no Functions Engine
+                if telemetry_collector_instance:
+                    telemetry_collector_instance.feed_storage()
+            except Exception as e:
+                logging.debug(f"[TELEMETRY ERROR] {e}")
+
+            # Varreduras em ciclos menores (~15s)
+            if cycle % 3 == 0:
+                try:
+                    target_id = identity_guard_instance if identity_guard_instance else identity_guard
+                    if target_id and hasattr(target_id, "scan_running_processes_and_cmdlines"):
+                        target_id.scan_running_processes_and_cmdlines()
+                except Exception as e:
+                    logging.debug(f"[IDENTITY ERROR] {e}")
+
+                try:
+                    target_ae = anti_exploit_guard_instance if anti_exploit_guard_instance else anti_exploit_guard
+                    if target_ae and hasattr(target_ae, "inspect_process_tree"):
+                        target_ae.inspect_process_tree()
+                except Exception as e:
+                    logging.debug(f"[ANTI_EXPLOIT ERROR] {e}")
+
+            # Varreduras profundas (~30s)
+            if cycle % 6 == 0:
+                try:
+                    target_perim = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
+                    if target_perim and hasattr(target_perim, "audit_arp_table"):
+                        target_perim.audit_arp_table()
+                except Exception as e:
+                    logging.debug(f"[PERIMETER ERROR] {e}")
+
+                try:
+                    target_posture = posture_guard_instance if posture_guard_instance else posture_guard
+                    if target_posture and hasattr(target_posture, "scan_asep_registry_and_files"):
+                        target_posture.scan_asep_registry_and_files()
+                except Exception as e:
+                    logging.debug(f"[POSTURE ERROR] {e}")
+
+            time.sleep(5)
+
+    worker = threading.Thread(target=run_all_engines_cycle, name="SentinelDefenseAutonomousWorker", daemon=True)
+    worker.start()
+    logger.log_event("INFO", "AUTONOMOUS_DEFENSE", "ENGINES_ACTIVE", "Todos os 20 motores soberanos operando em paralelo contínuo.")
+
+# Inicia o loop contínuo de varredura autônoma
+start_autonomous_defense_loop()
+
 def find_available_port(start_port=5000, max_attempts=10):
     """Varre portas a partir de start_port até encontrar uma disponível."""
     for p in range(start_port, start_port + max_attempts):
