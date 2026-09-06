@@ -32,6 +32,18 @@ CORS(app, supports_credentials=True)
 # Secret Key para assinatura de tokens de sessão
 SECRET_KEY = os.environ.get("SENTINEL_SECRET_KEY", "sentinel-sovereign-cloud-master-secret-2026")
 
+# Gerenciador Oficial PostgreSQL do Projeto
+pg_manager = None
+try:
+    from sentinel_core.db_postgres import pg_manager as _pg
+    pg_manager = _pg
+    import threading
+    threading.Thread(target=pg_manager.init_tables, daemon=True).start()
+except Exception as _e:
+    print(f"[POSTGRES_INIT_WARNING] {_e}", file=sys.stderr)
+
+
+
 # ==============================================================================
 # BANCO DE DADOS SERVERLESS (SQLite com Auto-Migração)
 # ==============================================================================
@@ -373,9 +385,45 @@ def dashboard_page():
             `;
             pill.onclick = openCloudDeviceModal;
 
+            const dbPill = document.createElement('div');
+            dbPill.className = 'cloud-status-pill';
+            dbPill.id = 'cloudDbPill';
+            dbPill.title = 'Status do Banco de Dados Oficial PostgreSQL';
+            dbPill.innerHTML = `
+                <i class="fa-solid fa-database" style="color: #60a5fa;"></i>
+                <span id="cloudDbLabel"><strong>DB:</strong> Verificando...</span>
+            `;
+            dbPill.onclick = () => {{
+                fetch('/api/cloud/db/status').then(r => r.json()).then(d => {{
+                    if (d.status === 'connected') {{
+                        alert('✅ BANCO POSTGRESQL ATIVO!\nHost: ' + d.database.host + '\nBase: ' + d.database.database + '\nDriver: ' + (d.database.drivers?.pg8000 ? 'pg8000' : 'psycopg2') + '\nStatus: Conectado e Operacional!');
+                    }} else {{
+                        alert('⚠️ BANCO POSTGRESQL AGUARDANDO LIBERAÇÃO:\nHost: ' + (d.database?.host || '167.249.121.40:5432') + '\nBase: ' + (d.database?.database || 'db_guilherme') + '\n\n' + d.instructions);
+                    }}
+                }});
+            }};
+
             if (brandWrap) {{
                 brandWrap.appendChild(pill);
+                brandWrap.appendChild(dbPill);
             }}
+
+            // Atualiza status do banco
+            fetch('/api/cloud/db/status').then(r => r.json()).then(d => {{
+                const label = document.getElementById('cloudDbLabel');
+                const pillEl = document.getElementById('cloudDbPill');
+                if (label && pillEl) {{
+                    if (d.status === 'connected') {{
+                        label.innerHTML = '<strong>DB:</strong> Online';
+                        pillEl.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+                        pillEl.style.background = 'rgba(16, 185, 129, 0.1)';
+                    }} else {{
+                        label.innerHTML = '<strong>DB:</strong> Porta 5432';
+                        pillEl.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+                        pillEl.style.background = 'rgba(245, 158, 11, 0.1)';
+                    }}
+                }}
+            }}).catch(e => {{}});
 
             const actionsWrap = document.querySelector('.header-right-actions');
             if (actionsWrap && !document.getElementById('cloudLogoutBtn')) {{
@@ -551,6 +599,20 @@ def register():
 
     try:
         user_id = 1
+        # Tenta persistir no PostgreSQL oficial primeiro
+        if pg_manager:
+            try:
+                pg_u = pg_manager.get_user_by_email(email)
+                if pg_u:
+                    user_id = pg_u["id"]
+                else:
+                    new_uid = pg_manager.create_user(email, pwd_hash)
+                    if new_uid:
+                        user_id = new_uid
+            except Exception:
+                pass
+
+        # Fallback local SQLite
         try:
             with get_db() as conn:
                 cur = conn.cursor()
@@ -570,6 +632,12 @@ def register():
         linked_device = None
 
         if computer_id:
+            if pg_manager:
+                try:
+                    pg_manager.upsert_device(user_id, computer_id, "PC-Vinculado", "Windows", sync_token)
+                except Exception:
+                    pass
+
             try:
                 with get_db() as conn:
                     cur = conn.cursor()
@@ -615,23 +683,42 @@ def login():
         user_id = 1
         active_comp_id = ""
         devices = []
-        try:
-            with get_db() as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT id, email, password_hash FROM users WHERE email = ?", (email,))
-                row = cur.fetchone()
-                if row:
-                    if row["password_hash"] != pwd_hash:
+
+        # 1. Consulta no PostgreSQL Oficial
+        if pg_manager:
+            try:
+                pg_u = pg_manager.get_user_by_email(email)
+                if pg_u:
+                    if pg_u["password_hash"] != pwd_hash:
                         return jsonify({"status": "error", "message": "Email ou senha incorretos"}), 401
-                    user_id = row["id"]
-                    cur.execute("SELECT computer_id, hostname, os_name, sync_token, last_seen FROM devices WHERE user_id = ?", (user_id,))
-                    devices = [dict(d) for d in cur.fetchall()]
-                    if devices:
+                    user_id = pg_u["id"]
+                    pg_devs = pg_manager.get_devices(user_id)
+                    if pg_devs:
+                        devices = pg_devs
                         active_comp_id = devices[0]["computer_id"]
-        except Exception:
-            pass
+            except Exception:
+                pass
+
+        # 2. Fallback local SQLite se não encontrado no PG
+        if not devices:
+            try:
+                with get_db() as conn:
+                    cur = conn.cursor()
+                    cur.execute("SELECT id, email, password_hash FROM users WHERE email = ?", (email,))
+                    row = cur.fetchone()
+                    if row:
+                        if row["password_hash"] != pwd_hash:
+                            return jsonify({"status": "error", "message": "Email ou senha incorretos"}), 401
+                        user_id = row["id"]
+                        cur.execute("SELECT computer_id, hostname, os_name, sync_token, last_seen FROM devices WHERE user_id = ?", (user_id,))
+                        devices = [dict(d) for d in cur.fetchall()]
+                        if devices:
+                            active_comp_id = devices[0]["computer_id"]
+            except Exception:
+                pass
 
         token = generate_user_token(user_id, email, active_comp_id)
+
         resp = make_response(jsonify({
             "status": "success",
             "message": "Autenticado com sucesso",
@@ -697,6 +784,12 @@ def link_device():
 
     sync_token = generate_device_token(user["user_id"], user["email"], computer_id)
 
+    if pg_manager:
+        try:
+            pg_manager.upsert_device(user["user_id"], computer_id, hostname, os_name, sync_token)
+        except Exception:
+            pass
+
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -726,13 +819,23 @@ def link_device():
 def list_devices():
     user = get_current_user()
     rows = []
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT computer_id, hostname, os_name, sync_token, created_at, last_seen FROM devices WHERE user_id = ?", (user["user_id"],))
-            rows = [dict(d) for d in cur.fetchall()]
-    except Exception:
-        pass
+
+    if pg_manager:
+        try:
+            pg_rows = pg_manager.get_devices(user["user_id"])
+            if pg_rows:
+                rows = pg_rows
+        except Exception:
+            pass
+
+    if not rows:
+        try:
+            with get_db() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT computer_id, hostname, os_name, sync_token, created_at, last_seen FROM devices WHERE user_id = ?", (user["user_id"],))
+                rows = [dict(d) for d in cur.fetchall()]
+        except Exception:
+            pass
         
     if not rows and user.get("computer_id"):
         rows = [{
@@ -791,7 +894,14 @@ def sync_push():
 
     user_id = auth_info.get("user_id", 1)
 
-    # 1. Armazena no banco local sqlite se disponível
+    # 1. Armazena no PostgreSQL Oficial
+    if pg_manager:
+        try:
+            pg_manager.save_telemetry_snapshot(computer_id, data)
+        except Exception:
+            pass
+
+    # 2. Armazena no banco local sqlite se disponível
     try:
         with get_db() as conn:
             cur = conn.cursor()
@@ -819,7 +929,7 @@ def sync_push():
     except Exception:
         pass
 
-    # 2. Publica no canal cloud relay pub/sub para persistência distribuída entre instâncias
+    # 3. Publica no canal cloud relay pub/sub para persistência distribuída entre instâncias
     push_telemetry_to_relay(user_id, data)
 
     return jsonify({"status": "success", "message": "Telemetria sincronizada com a nuvem Sentinela"})
@@ -834,32 +944,43 @@ def sync_pull():
     telemetry_data = None
     updated_at = "Recentemente"
 
-    # 1. Tenta recuperar do banco de dados local
-    try:
-        with get_db() as conn:
-            cur = conn.cursor()
-            if not computer_id:
-                cur.execute("SELECT computer_id FROM devices WHERE user_id = ? ORDER BY last_seen DESC LIMIT 1", (user["user_id"],))
-                row = cur.fetchone()
-                if row:
-                    computer_id = row["computer_id"]
+    # 1. Tenta recuperar do PostgreSQL Oficial
+    if pg_manager and computer_id:
+        try:
+            pg_res = pg_manager.get_telemetry_snapshot(computer_id)
+            if pg_res:
+                telemetry_data, updated_at = pg_res
+        except Exception:
+            pass
 
-            if computer_id:
-                cur.execute("SELECT snapshot_json, updated_at FROM telemetry WHERE computer_id = ?", (computer_id,))
-                row = cur.fetchone()
-                if row:
-                    telemetry_data = json.loads(row["snapshot_json"])
-                    updated_at = row["updated_at"]
-    except Exception:
-        pass
+    # 2. Tenta recuperar do banco de dados local SQLite
+    if not telemetry_data:
+        try:
+            with get_db() as conn:
+                cur = conn.cursor()
+                if not computer_id:
+                    cur.execute("SELECT computer_id FROM devices WHERE user_id = ? ORDER BY last_seen DESC LIMIT 1", (user["user_id"],))
+                    row = cur.fetchone()
+                    if row:
+                        computer_id = row["computer_id"]
 
-    # 2. Se SQLite não possui o snapshot (cold start serverless), recupera do pub/sub cloud relay
+                if computer_id:
+                    cur.execute("SELECT snapshot_json, updated_at FROM telemetry WHERE computer_id = ?", (computer_id,))
+                    row = cur.fetchone()
+                    if row:
+                        telemetry_data = json.loads(row["snapshot_json"])
+                        updated_at = row["updated_at"]
+        except Exception:
+            pass
+
+    # 3. Se ainda não possui o snapshot, recupera do pub/sub cloud relay
     if not telemetry_data:
         relay_snapshot = pull_telemetry_from_relay(user["user_id"])
         if relay_snapshot:
             telemetry_data = relay_snapshot
             computer_id = relay_snapshot.get("computer_id", computer_id)
             updated_at = "Agora (Cloud Relay)"
+
 
     if not telemetry_data:
         return jsonify({
@@ -874,6 +995,25 @@ def sync_pull():
         "computer_id": computer_id,
         "updated_at": updated_at,
         "data": telemetry_data
+    })
+
+@app.route("/api/cloud/db/status", methods=["GET"])
+def cloud_db_status():
+    """Retorna o status da conexão com o banco de dados oficial PostgreSQL."""
+    if not pg_manager:
+        return jsonify({
+            "status": "disabled",
+            "message": "Módulo PostgreSQL não carregado",
+            "connected": False
+        })
+    st = pg_manager.get_status()
+    return jsonify({
+        "status": "connected" if st["connected"] else "unreachable",
+        "database": st,
+        "instructions": (
+            "Se o status for 'unreachable', certifique-se de liberar a porta 5432 no firewall da VPS "
+            "('sudo ufw allow 5432/tcp') e configurar listen_addresses = '*' no postgresql.conf."
+        ) if not st["connected"] else "Banco de dados conectado e sincronizado com o Sentinela XDR!"
     })
 
 
