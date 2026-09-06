@@ -347,8 +347,20 @@
     <script>
         let currentMode = 'login';
 
-        // Preenche o computer-id automaticamente se fornecido na URL (?hwid=SENT-...)
-        window.addEventListener('DOMContentLoaded', () => {
+        // Auto-reconexão se já houver token salvo no navegador
+        window.addEventListener('DOMContentLoaded', async () => {
+            const savedToken = localStorage.getItem('sentinel_cloud_token');
+            if (savedToken) {
+                document.cookie = `sentinel_cloud_token=${savedToken}; path=/; max-age=2592000; SameSite=Lax; Secure`;
+                try {
+                    const chk = await fetch('/api/cloud/auth/me');
+                    if (chk.ok) {
+                        window.location.href = '/dashboard?token=' + encodeURIComponent(savedToken);
+                        return;
+                    }
+                } catch(e) {}
+            }
+
             const urlParams = new URLSearchParams(window.location.search);
             const hwidParam = urlParams.get('hwid') || urlParams.get('device');
             if (hwidParam) {
@@ -423,14 +435,15 @@
                     showAlert(currentMode === 'login' ? 'Autenticado com sucesso! Redirecionando...' : 'Conta criada e computador vinculado! Entrando...', false);
                     if (data.token) {
                         localStorage.setItem('sentinel_cloud_token', data.token);
+                        document.cookie = `sentinel_cloud_token=${data.token}; path=/; max-age=2592000; SameSite=Lax; Secure`;
                         localStorage.setItem('sentinel_user_email', email);
                         if (data.active_device) {
                             localStorage.setItem('sentinel_active_device', JSON.stringify(data.active_device));
                         }
                     }
                     setTimeout(() => {
-                        window.location.href = '/dashboard';
-                    }, 800);
+                        window.location.href = '/dashboard?token=' + encodeURIComponent(data.token);
+                    }, 500);
                 } else {
                     showAlert(data.message || 'Falha na autenticação. Verifique os dados inseridos.');
                     btnSubmit.disabled = false;
@@ -442,6 +455,7 @@
                 btnSubmit.innerHTML = `<i class="fa-solid fa-fingerprint"></i> <span>${currentMode === 'login' ? 'Autenticar no Console' : 'Criar Conta & Vincular'}</span>`;
             }
         }
+
     </script>
 </body>
 </html>

@@ -1201,10 +1201,8 @@
             background: rgba(10, 14, 23, 0.96) !important;
             backdrop-filter: blur(16px) !important;
             border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
-            padding: 0 1.5rem !important;
-            height: 56px !important;
+            padding: 0.35rem 1.25rem !important;
             min-height: 56px !important;
-            max-height: 56px !important;
             display: flex !important;
             justify-content: space-between !important;
             align-items: center !important;
@@ -1212,6 +1210,8 @@
             top: 0 !important;
             z-index: 1000 !important;
             box-sizing: border-box !important;
+            flex-wrap: wrap !important;
+            gap: 0.5rem !important;
         }
 
         /* Lado Esquerdo: Brand Identity & Status */
@@ -2040,6 +2040,10 @@
             <i class="fa-solid fa-chart-line"></i> <span>Visão Geral</span>
             <span class="tab-badge" id="navKpiBadge" style="display:none;">GRAFANA</span>
         </button>
+        <button class="nav-tab-btn" id="navMotorsBtn" data-tab="motors" onclick="switchDashboardTab('motors')" title="Central de Todos os 53 Motores Soberanos de Ciberdefesa" style="border-color: rgba(0, 240, 255, 0.4); color: var(--accent-cyan);">
+            <i class="fa-solid fa-microchip"></i> <span>Motores (37 Ativos)</span>
+            <span class="tab-badge" style="background: rgba(0, 240, 255, 0.2); color: #00f0ff; border: 1px solid #00f0ff; display: inline-block;">53 CAMADAS</span>
+        </button>
         <button class="nav-tab-btn" data-tab="edr" onclick="switchDashboardTab('edr')" title="Linhagem Forense de Processos EDR">
             <i class="fa-solid fa-network-wired"></i> <span>EDR Forense</span>
             <span class="tab-badge" id="navEdrBadge" style="display:none;">FORENSE</span>
@@ -2403,6 +2407,169 @@
         </div>
 
         <!-- CENTRAL DE AUDITORIA & LOGS SIEM EM TEMPO REAL -->
+        </section>
+
+        <!-- ========================================================
+             ABA ESPECIAL: CENTRAL DE MOTORES & SUBSISTEMAS (37 MOTORES)
+             ======================================================== -->
+        <section id="tab-motors" class="tab-pane">
+            <div style="background: #0d1322; border: 1px solid #1e293b; border-radius: 14px; padding: 24px; margin-bottom: 24px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; border-bottom: 1px solid #1e293b; padding-bottom: 14px;">
+                    <div>
+                        <h2 style="font-size: 1.25rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 10px;">
+                            <i class="fa-solid fa-layer-group" style="color: #00f0ff;"></i>
+                            Central de Motores de Ciberdefesa Ativa Soberana
+                        </h2>
+                        <p style="font-size: 0.85rem; color: #94a3b8; margin-top: 4px;">
+                            53 Motores e Subsistemas Especializados em Proteção de Kernel, Identidade, Decepção e Forense Ativa.
+                        </p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <span style="display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; color: #10b981; border-radius: 20px; padding: 4px 14px; font-size: 0.78rem; font-weight: 700;">
+                            <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                            53 MOTORES ATIVOS & OPERACIONAIS
+                        </span>
+                        <button onclick="toggleSidebarMenu()" class="btn-header-secondary" style="border-color: #00f0ff; color: #00f0ff;">
+                            <i class="fa-solid fa-bars-staggered"></i> Gaveta Lateral
+                        </button>
+                    </div>
+                </div>
+
+                <!-- GRADE DE CARDS DE MOTORES -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;">
+                    <!-- Card 1: Anti-Invasão -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(239, 68, 68, 0.4); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="switchDashboardTab('anti-invasion')">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-shield-virus" style="font-size: 1.5rem; color: #ef4444;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(239, 68, 68, 0.2); color: #ef4444; font-weight: 700;">ACTIVE COMBAT</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Anti-Invasão & Caça C2</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Matriz de combate contra invasão remota, beaconing e jitter tático.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Abrir Painel Anti-Invasão</button>
+                    </div>
+
+                    <!-- Card 2: PQC -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(0, 240, 255, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openPQCModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-atom" style="font-size: 1.5rem; color: #00f0ff;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(0, 240, 255, 0.15); color: #00f0ff; font-weight: 700;">NIST ML-KEM</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Post-Quantum Cryptography</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Blindagem quântica NIST FIPS 203/204 para comunicações e chaves.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Configurar PQC</button>
+                    </div>
+
+                    <!-- Card 3: Zero Trust -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(16, 185, 129, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openZeroTrustModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-user-shield" style="font-size: 1.5rem; color: #10b981;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700;">CARTA SCORE</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Zero Trust CARTA Engine</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Avaliação contínua de risco adaptativo e isolamento de perímetro.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Ver Matriz CARTA</button>
+                    </div>
+
+                    <!-- Card 4: Identity Guard -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(0, 240, 255, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openIdentityGuardModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-id-card-clip" style="font-size: 1.5rem; color: #00f0ff;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(0, 240, 255, 0.15); color: #00f0ff; font-weight: 700;">LSASS ARMOR</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Identity & LSASS Armor</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Bloqueio contra dumping de credenciais, Mimikatz e Potato PrivEsc.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Status do LSASS</button>
+                    </div>
+
+                    <!-- Card 5: DLP Exfiltration -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(245, 158, 11, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openDLPModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-file-shield" style="font-size: 1.5rem; color: #f59e0b;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; font-weight: 700;">USB & CLIPBOARD</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">DLP Exfiltration Guard</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Controle de vazamento de dados confidenciais, USB e área de transferência.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Regras DLP</button>
+                    </div>
+
+                    <!-- Card 6: Anti-Exploit -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(239, 68, 68, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openAntiExploitModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-bug-slash" style="font-size: 1.5rem; color: #ef4444;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(239, 68, 68, 0.15); color: #ef4444; font-weight: 700;">ANTI-HOLLOWING</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Execution Anti-Exploit Guard</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Proteção contra injeção DLL, Process Hollowing e exploits Zero-Day.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Painel Anti-Exploit</button>
+                    </div>
+
+                    <!-- Card 7: Rollback Anti-Ransomware -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(168, 85, 247, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openRollbackModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-rotate-left" style="font-size: 1.5rem; color: #a855f7;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(168, 85, 247, 0.15); color: #a855f7; font-weight: 700;">1-CLIQUE</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Rollback Anti-Ransomware</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Restauração instantânea de arquivos encriptados através de shadow snapshots.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Gerenciar Snapshots</button>
+                    </div>
+
+                    <!-- Card 8: Honeyfiles & Deception -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(245, 158, 11, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openHoneyfilesModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-crow" style="font-size: 1.5rem; color: #f59e0b;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; font-weight: 700;">CANARY TRAPS</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Honeyfiles & Deception</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Iscas ativas e tokens canário para flagrar ransomware no primeiro toque.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Armadilhas Armadas</button>
+                    </div>
+
+                    <!-- Card 9: Live Memory Forensics -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(0, 240, 255, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openMemoryModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-microchip" style="font-size: 1.5rem; color: #00f0ff;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(0, 240, 255, 0.15); color: #00f0ff; font-weight: 700;">RAM INSPECTOR</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Live Memory Forensics</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Inspeção ao vivo de memória RAM, injeções shellcode e hunting RWX.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Analisar Memória</button>
+                    </div>
+
+                    <!-- Card 10: UEBA -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(16, 185, 129, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openUEBAModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-brain" style="font-size: 1.5rem; color: #10b981;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700;">IA BEHAVIOR</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">UEBA Análise Comportamental</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Grafo de risco de anomalias de usuários, processos e horários atípicos.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Ver Grafo UEBA</button>
+                    </div>
+
+                    <!-- Card 11: MITRE ATT&CK -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(0, 240, 255, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openMitreModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-chess-board" style="font-size: 1.5rem; color: #00f0ff;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(0, 240, 255, 0.15); color: #00f0ff; font-weight: 700;">TACTICS & TTP</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">MITRE ATT&CK Navigator</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Mapeamento dinâmico de táticas, técnicas e procedimentos adversários.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Abrir Matriz MITRE</button>
+                    </div>
+
+                    <!-- Card 12: Kernel ETW -->
+                    <div class="card" style="background: #080c16; border: 1px solid rgba(0, 240, 255, 0.3); padding: 18px; border-radius: 12px; cursor: pointer;" onclick="openKernelStatusModal()">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <i class="fa-solid fa-microchip" style="font-size: 1.5rem; color: #00f0ff;"></i>
+                            <span style="font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; background: rgba(0, 240, 255, 0.15); color: #00f0ff; font-weight: 700;">RING-0 TELEMETRY</span>
+                        </div>
+                        <h4 style="color: #fff; font-size: 0.95rem; font-weight: 700;">Kernel ETW Monitor</h4>
+                        <p style="color: #94a3b8; font-size: 0.78rem; margin: 6px 0 12px 0;">Rastreamento em nível de driver com Event Tracing for Windows e Sysmon.</p>
+                        <button class="btn-header-secondary" style="width: 100%; justify-content: center; font-size: 0.75rem;">Status do Kernel</button>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <!-- ========================================================

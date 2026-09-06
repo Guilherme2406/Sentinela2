@@ -32,10 +32,11 @@ def main():
             return
 
     print("\n[+] Digite os dados da sua conta na Nuvem Vercel:")
-    cloud_url = input("URL da Nuvem (ex: https://seu-projeto.vercel.app): ").strip()
+    default_url = "https://sentinela2.vercel.app"
+    cloud_url = input(f"URL da Nuvem [Pressione Enter para '{default_url}']: ").strip()
     if not cloud_url:
-        print("[!] URL da nuvem é obrigatória.")
-        return
+        cloud_url = default_url
+
         
     email = input("Email da sua conta: ").strip()
     if not email:

@@ -174,21 +174,26 @@ def pair_with_cloud(cloud_url: str, email: str, password: str) -> bool:
     try:
         req = urllib.request.Request(auth_endpoint, data=login_payload, headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+            raw_text = resp.read().decode("utf-8")
+            if "<!DOCTYPE" in raw_text or "<html" in raw_text:
+                logger.error("A URL informada exige autenticacao previa do Vercel (Deployment Protection).")
+                logger.error("Por favor, utilize a URL de Producao: https://sentinela2.vercel.app")
+                return False
+            data = json.loads(raw_text)
             if data.get("status") == "success":
                 token = data.get("token")
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            logger.error("Credenciais inválidas. Verifique seu email e senha.")
+            logger.error("Credenciais invalidas. Verifique seu email e senha.")
             return False
         logger.error("Erro HTTP ao autenticar: %s", e)
         return False
     except Exception as e:
-        logger.error("Falha de conexão com a Nuvem: %s", e)
+        logger.error("Falha de conexao com a Nuvem: %s", e)
         return False
 
     if not token:
-        logger.error("Não foi possível obter o token de autenticação.")
+        logger.error("Nao foi possivel obter o token de autenticacao.")
         return False
 
     # 2. Registra o vínculo do hardware ID
@@ -208,7 +213,8 @@ def pair_with_cloud(cloud_url: str, email: str, password: str) -> bool:
     try:
         req = urllib.request.Request(link_endpoint, data=link_payload, headers=link_headers, method="POST")
         with urllib.request.urlopen(req, timeout=10) as resp:
-            link_data = json.loads(resp.read().decode("utf-8"))
+            raw_text = resp.read().decode("utf-8")
+            link_data = json.loads(raw_text)
             if link_data.get("status") == "success":
                 sync_token = link_data.get("sync_token")
                 save_pairing_info(cloud_url, email, sync_token)
