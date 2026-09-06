@@ -1055,7 +1055,7 @@ def cloud_db_status():
     if not pg_manager:
         return jsonify({
             "status": "disabled",
-            "message": "Módulo PostgreSQL não carregado",
+            "message": f"Módulo PostgreSQL não carregado: {_pg_init_error or 'Erro desconhecido'}",
             "connected": False
         })
     st = pg_manager.get_status()
