@@ -38,10 +38,21 @@ SECRET_KEY = os.environ.get("SENTINEL_SECRET_KEY", "sentinel-sovereign-cloud-mas
 pg_manager = None
 _pg_init_error = None
 try:
-    from sentinel_core.db_postgres import pg_manager as _pg
-    pg_manager = _pg
-    import threading
-    threading.Thread(target=pg_manager.init_tables, daemon=True).start()
+    import importlib.util
+    pg_path = BASE_DIR / "sentinel_core" / "db_postgres.py"
+    if pg_path.exists():
+        spec = importlib.util.spec_from_file_location("sentinel_db_postgres", str(pg_path))
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["sentinel_db_postgres"] = mod
+        spec.loader.exec_module(mod)
+        pg_manager = getattr(mod, "pg_manager", None)
+    if not pg_manager:
+        from sentinel_core.db_postgres import pg_manager as _pg
+        pg_manager = _pg
+
+    if pg_manager:
+        import threading
+        threading.Thread(target=pg_manager.init_tables, daemon=True).start()
 except Exception as _e:
     _pg_init_error = str(_e)
     print(f"[POSTGRES_INIT_WARNING] {_e}", file=sys.stderr)

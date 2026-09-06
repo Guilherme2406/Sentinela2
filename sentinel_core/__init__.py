@@ -8,7 +8,11 @@ from sentinel_core.network_monitor import NetworkMonitor
 from sentinel_core.crypto_vault import CryptoVault
 from sentinel_core.threat_detector import ThreatDetector
 from sentinel_core.auto_response import AutoResponseEngine
-from sentinel_core.ai_anomaly_detector import AIAnomalyDetector
+try:
+    from sentinel_core.ai_anomaly_detector import AIAnomalyDetector
+except ImportError:
+    AIAnomalyDetector = None
+
 from sentinel_core.honeypot import Honeypot
 from sentinel_core.network_ids import NetworkIDS
 from sentinel_core.ip_geolocator import IPGeolocator
@@ -20,7 +24,11 @@ from sentinel_core.threat_intel import GlobalThreatIntel, ThreatIntelFeed
 from sentinel_core.canary_files import CanaryTokenEngine
 from sentinel_core.tarpit import CyberTarpitServer
 from sentinel_core.process_guard import EDRProcessGuard
-from sentinel_core.ai_predictor import ZeroDayAIPredictor
+
+try:
+    from sentinel_core.ai_predictor import ZeroDayAIPredictor
+except ImportError:
+    ZeroDayAIPredictor = None
 from sentinel_core.quarantine_vault import QuarantineVault
 from sentinel_core.deception_grid import CanaryFileTracker, PassivHoneypotPort
 from sentinel_core.kernel_monitor import SystemKernelMonitor
