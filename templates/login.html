@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENTINEL XDR | Autenticação Soberana Cloud</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --bg-dark: #080b11;
+            --bg-card: #0e1422;
+            --border-glow: rgba(0, 240, 255, 0.25);
+            --border-subtle: #1e293b;
+            --accent-cyan: #00f0ff;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 50% 20%, rgba(0, 240, 255, 0.08) 0%, transparent 60%),
+                radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.05) 0%, transparent 50%),
+                linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 460px;
+            padding: 24px;
+            z-index: 10;
+        }
+
+        .auth-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 16px;
+            padding: 36px 32px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6), 0 0 30px rgba(0, 240, 255, 0.08);
+            backdrop-filter: blur(16px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .auth-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #00f0ff, #10b981, #00f0ff);
+            background-size: 200% 100%;
+            animation: cyberGradient 4s linear infinite;
+        }
+
+        @keyframes cyberGradient {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .brand {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 28px;
+            text-align: center;
+        }
+
+        .brand-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 14px;
+            background: rgba(0, 240, 255, 0.1);
+            border: 1px solid var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            color: var(--accent-cyan);
+            margin-bottom: 14px;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.25);
+        }
+
+        .brand h1 {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            color: var(--text-main);
+            text-transform: uppercase;
+        }
+
+        .brand h1 span {
+            color: var(--accent-cyan);
+        }
+
+        .brand p {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .tabs {
+            display: flex;
+            background: #080b11;
+            border-radius: 10px;
+            padding: 4px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border-subtle);
+        }
+
+        .tab-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            padding: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            background: rgba(0, 240, 255, 0.12);
+            color: var(--accent-cyan);
+            border: 1px solid rgba(0, 240, 255, 0.3);
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            left: 14px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .input-field {
+            width: 100%;
+            padding: 12px 14px 12px 40px;
+            background: #060910;
+            border: 1px solid var(--border-subtle);
+            border-radius: 10px;
+            color: var(--text-main);
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .input-field:focus {
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.2);
+        }
+
+        .input-field.mono {
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #00f0ff 0%, #0284c7 100%);
+            border: none;
+            border-radius: 10px;
+            color: #040810;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 20px rgba(0, 240, 255, 0.3);
+            margin-top: 10px;
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 25px rgba(0, 240, 255, 0.45);
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .alert-box {
+            padding: 12px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-bottom: 18px;
+            display: none;
+        }
+
+        .alert-error {
+            background: rgba(239, 68, 68, 0.12);
+            border: 1px solid rgba(239, 68, 68, 0.4);
+            color: #fca5a5;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #6ee7b7;
+        }
+
+        .device-callout {
+            background: rgba(0, 240, 255, 0.05);
+            border: 1px dashed rgba(0, 240, 255, 0.3);
+            border-radius: 10px;
+            padding: 14px;
+            margin-top: 16px;
+            font-size: 12px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .device-callout strong {
+            color: var(--accent-cyan);
+        }
+
+        .footer-note {
+            text-align: center;
+            font-size: 11px;
+            color: #475569;
+            margin-top: 24px;
+            letter-spacing: 0.5px;
+        }
+
+        .footer-note span {
+            color: var(--accent-green);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="auth-card">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i class="fa-solid fa-shield-halved"></i>
+                </div>
+                <h1>SENTINEL <span>XDR</span></h1>
+                <p>Centro de Ciberdefesa Soberano — Acesso Cloud Global</p>
+            </div>
+
+            <div class="tabs">
+                <button type="button" class="tab-btn active" id="tab-login" onclick="switchTab('login')">
+                    <i class="fa-solid fa-right-to-bracket"></i> Entrar
+                </button>
+                <button type="button" class="tab-btn" id="tab-register" onclick="switchTab('register')">
+                    <i class="fa-solid fa-user-plus"></i> Nova Conta
+                </button>
+            </div>
+
+            <div id="alert-msg" class="alert-box"></div>
+
+            <form id="auth-form" onsubmit="handleAuth(event)">
+                <div class="form-group">
+                    <label class="form-label" for="email">Email do Operador</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-envelope"></i>
+                        <input type="email" id="email" class="input-field" placeholder="operador@sentinela.local" required autocomplete="email">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password">Senha de Segurança</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="password" class="input-field" placeholder="••••••••••••" required autocomplete="current-password">
+                    </div>
+                </div>
+
+                <!-- Campo exclusivo de Registro / Primeiro Uso: ID do Computador -->
+                <div class="form-group" id="group-computer-id" style="display: none;">
+                    <label class="form-label" for="computer-id">
+                        ID do Computador Local (Primeiro Uso)
+                    </label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-desktop"></i>
+                        <input type="text" id="computer-id" class="input-field mono" placeholder="Ex: SENT-0E5B-414F-C5DF">
+                    </div>
+                    <div class="device-callout">
+                        <i class="fa-solid fa-circle-info"></i>
+                        Insira o ID exibido no seu aplicativo <strong>Sentinela Windows</strong> ou no console local. Você também poderá vincular posteriormente.
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-submit" id="btn-submit">
+                    <i class="fa-solid fa-fingerprint"></i>
+                    <span id="btn-label">Autenticar no Console</span>
+                </button>
+            </form>
+
+            <div class="footer-note">
+                <i class="fa-solid fa-lock"></i> Conexão Criptografada PQC-Ready &bull; <span>100% Soberana</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentMode = 'login';
+
+        // Preenche o computer-id automaticamente se fornecido na URL (?hwid=SENT-...)
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const hwidParam = urlParams.get('hwid') || urlParams.get('device');
+            if (hwidParam) {
+                const compInput = document.getElementById('computer-id');
+                if (compInput) compInput.value = hwidParam.toUpperCase();
+                switchTab('register');
+            }
+        });
+
+        function switchTab(mode) {
+            currentMode = mode;
+            const tabLogin = document.getElementById('tab-login');
+            const tabRegister = document.getElementById('tab-register');
+            const groupCompId = document.getElementById('group-computer-id');
+            const btnLabel = document.getElementById('btn-label');
+            const alertMsg = document.getElementById('alert-msg');
+            
+            alertMsg.style.display = 'none';
+
+            if (mode === 'login') {
+                tabLogin.classList.add('active');
+                tabRegister.classList.remove('active');
+                groupCompId.style.display = 'none';
+                btnLabel.innerText = 'Autenticar no Console';
+            } else {
+                tabLogin.classList.remove('active');
+                tabRegister.classList.add('active');
+                groupCompId.style.display = 'block';
+                btnLabel.innerText = 'Criar Conta & Vincular Computador';
+            }
+        }
+
+        function showAlert(msg, isError = true) {
+            const alertMsg = document.getElementById('alert-msg');
+            alertMsg.className = 'alert-box ' + (isError ? 'alert-error' : 'alert-success');
+            alertMsg.innerHTML = (isError ? '<i class="fa-solid fa-triangle-exclamation"></i> ' : '<i class="fa-solid fa-circle-check"></i> ') + msg;
+            alertMsg.style.display = 'block';
+        }
+
+        async function handleAuth(event) {
+            event.preventDefault();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+            const computerId = document.getElementById('computer-id').value.trim();
+            const btnSubmit = document.getElementById('btn-submit');
+            
+            if (!email || !password) {
+                showAlert('Por favor, informe email e senha.');
+                return;
+            }
+
+            btnSubmit.disabled = true;
+            btnSubmit.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Processando...';
+
+            try {
+                const endpoint = currentMode === 'login' ? '/api/cloud/auth/login' : '/api/cloud/auth/register';
+                const payload = {
+                    email: email,
+                    password: password,
+                    computer_id: computerId
+                };
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await res.json();
+
+                if (res.ok && data.status === 'success') {
+                    showAlert(currentMode === 'login' ? 'Autenticado com sucesso! Redirecionando...' : 'Conta criada e computador vinculado! Entrando...', false);
+                    if (data.token) {
+                        localStorage.setItem('sentinel_cloud_token', data.token);
+                        localStorage.setItem('sentinel_user_email', email);
+                        if (data.active_device) {
+                            localStorage.setItem('sentinel_active_device', JSON.stringify(data.active_device));
+                        }
+                    }
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
+                    }, 800);
+                } else {
+                    showAlert(data.message || 'Falha na autenticação. Verifique os dados inseridos.');
+                    btnSubmit.disabled = false;
+                    btnSubmit.innerHTML = `<i class="fa-solid fa-fingerprint"></i> <span>${currentMode === 'login' ? 'Autenticar no Console' : 'Criar Conta & Vincular'}</span>`;
+                }
+            } catch (err) {
+                showAlert('Erro de comunicação com o servidor de autenticação: ' + err.message);
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = `<i class="fa-solid fa-fingerprint"></i> <span>${currentMode === 'login' ? 'Autenticar no Console' : 'Criar Conta & Vincular'}</span>`;
+            }
+        }
+    </script>
+</body>
+</html>

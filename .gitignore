@@ -34,8 +34,11 @@ _*.txt
 
 # Banco de dados e estado de execução soberano (gerados localmente)
 sentinel_events.db*
+sentinel_cloud.db*
+configs/machine_identity.json
 sentinel_runtime.json
 sentinel_daemon.log
+
 
 # Chave-master criptográfica AES-256 (NUNCA versionar)
 sentinel.key

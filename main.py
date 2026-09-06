@@ -14,6 +14,13 @@ if sys.platform == "win32":
     except Exception:
         pass
 
+# Compatibilidade com Vercel Serverless / Cloud Runtime
+try:
+    from api.index import app
+except Exception:
+    app = None
+
+
 from sentinel_core.logger import SecurityEventLogger
 from sentinel_core.crypto_vault import CryptoVault
 from sentinel_core.threat_detector import ThreatDetector
@@ -260,6 +267,15 @@ def main():
         rwx_hunter=rwx_hunter,
         honeyfiles_guard=ransomware_canary
     )
+
+    # 16.5. Inicia Sincronizador de Nuvem Soberana
+    try:
+        from sentinel_core.cloud_sync import CloudSyncWorker
+        cloud_sync = CloudSyncWorker(interval_seconds=15)
+        cloud_sync.start()
+        logging.info("[+] Sincronizador Cloud ativo em segundo plano.")
+    except Exception as e:
+        logging.debug(f"[CLOUD SYNC INIT ERROR] {e}")
 
     # 17. Banner final (a API já foi iniciada antecipadamente no passo 1.5)
     _mark("Todos os motores soberanos carregados e injetados na API")
