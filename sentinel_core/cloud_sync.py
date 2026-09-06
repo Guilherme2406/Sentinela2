@@ -243,6 +243,19 @@ if __name__ == "__main__":
         w = CloudSyncWorker()
         res = w.push_snapshot()
         print("Envio avulso:", res)
+    elif len(sys.argv) > 1 and sys.argv[1] in ("daemon", "run", "start", "sync"):
+        w = CloudSyncWorker(interval_seconds=4)
+        print(f"[*] Iniciando stream contínuo de telemetria para a Nuvem...")
+        print(f"    - Hardware ID : {w.identity.get('computer_id')}")
+        print(f"    - Cloud URL   : {w.identity.get('cloud_url')}")
+        print(f"    - Intervalo   : 4 segundos")
+        w.start()
+        try:
+            while True:
+                time.sleep(1)
+        except (KeyboardInterrupt, SystemExit):
+            w.stop()
+            print("\nStream de telemetria encerrado.")
     else:
         ident = load_or_create_identity()
         print("Status de Sincronização Local:")

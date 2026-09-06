@@ -22,6 +22,8 @@ from flask_cors import CORS
 
 # Diretórios base
 BASE_DIR = Path(__file__).resolve().parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 TEMPLATES_DIR = BASE_DIR / "templates"
 ASSETS_DIR = BASE_DIR / "assets"
 DB_PATH = Path("/tmp/sentinel_cloud.db") if os.path.exists("/tmp") else (BASE_DIR / "sentinel_cloud.db")
@@ -34,12 +36,14 @@ SECRET_KEY = os.environ.get("SENTINEL_SECRET_KEY", "sentinel-sovereign-cloud-mas
 
 # Gerenciador Oficial PostgreSQL do Projeto
 pg_manager = None
+_pg_init_error = None
 try:
     from sentinel_core.db_postgres import pg_manager as _pg
     pg_manager = _pg
     import threading
     threading.Thread(target=pg_manager.init_tables, daemon=True).start()
 except Exception as _e:
+    _pg_init_error = str(_e)
     print(f"[POSTGRES_INIT_WARNING] {_e}", file=sys.stderr)
 
 
@@ -363,67 +367,90 @@ def dashboard_page():
             }} catch(e){{}}
         }}
 
-        document.addEventListener('DOMContentLoaded', () => {{
+        function initCloudConsole() {{
+            checkDomainWarning();
             setupCloudHeader();
             startCloudSyncPolling();
-        }});
+        }}
+
+        if (document.readyState === 'loading') {{
+            document.addEventListener('DOMContentLoaded', initCloudConsole);
+        }} else {{
+            initCloudConsole();
+        }}
+
+        function checkDomainWarning() {{
+            if (window.location.hostname.includes('-git-') || window.location.hostname.includes('vercel.app') && !window.location.hostname.startsWith('sentinela2.')) {{
+                if (document.getElementById('domainWarningBanner')) return;
+                const banner = document.createElement('div');
+                banner.id = 'domainWarningBanner';
+                banner.style.cssText = 'background: linear-gradient(90deg, #b91c1c, #991b1b); color: #fff; font-size: 0.78rem; padding: 6px 16px; text-align: center; position: sticky; top: 0; z-index: 999999; display: flex; justify-content: center; align-items: center; gap: 12px; font-weight: 600; box-shadow: 0 2px 10px rgba(0,0,0,0.5);';
+                banner.innerHTML = `
+                    <span><i class="fa-solid fa-triangle-exclamation"></i> Você está em um link de visualização com proteção do Vercel. Para sincronização completa em tempo real, use a URL Oficial:</span>
+                    <a href="https://sentinela2.vercel.app/dashboard" style="background: #fff; color: #b91c1c; padding: 2px 10px; border-radius: 6px; text-decoration: none; font-weight: 700;">Acessar sentinela2.vercel.app</a>
+                `;
+                document.body.prepend(banner);
+            }}
+        }}
 
         function setupCloudHeader() {{
-            const brandWrap = document.querySelector('.brand-container');
+            const brandWrap = document.querySelector('.brand-container') || document.querySelector('header');
             const dev = window.SENTINEL_ACTIVE_DEVICE || {{}};
             const hasDev = !!dev.computer_id;
             const devIdShort = hasDev ? dev.computer_id : 'Nenhum Vinculado';
 
-            const pill = document.createElement('div');
-            pill.className = 'cloud-status-pill';
-            pill.id = 'cloudStatusPill';
-            pill.title = 'Gerenciar Computadores Vinculados à Conta Cloud';
-            pill.innerHTML = `
-                <span class="cloud-pulse ${{hasDev ? '' : 'offline'}}" id="cloudPulse"></span>
-                <i class="fa-solid fa-cloud" style="color: #00f0ff;"></i>
-                <span id="cloudDeviceLabel"><strong>PC:</strong> ${{devIdShort}}</span>
-            `;
-            pill.onclick = openCloudDeviceModal;
+            if (!document.getElementById('cloudStatusPill')) {{
+                const pill = document.createElement('div');
+                pill.className = 'cloud-status-pill';
+                pill.id = 'cloudStatusPill';
+                pill.title = 'Gerenciar Computadores Vinculados à Conta Cloud';
+                pill.innerHTML = `
+                    <span class="cloud-pulse ${{hasDev ? '' : 'offline'}}" id="cloudPulse"></span>
+                    <i class="fa-solid fa-cloud" style="color: #00f0ff;"></i>
+                    <span id="cloudDeviceLabel"><strong>PC:</strong> ${{devIdShort}}</span>
+                `;
+                pill.onclick = openCloudDeviceModal;
 
-            const dbPill = document.createElement('div');
-            dbPill.className = 'cloud-status-pill';
-            dbPill.id = 'cloudDbPill';
-            dbPill.title = 'Status do Banco de Dados Oficial PostgreSQL';
-            dbPill.innerHTML = `
-                <i class="fa-solid fa-database" style="color: #60a5fa;"></i>
-                <span id="cloudDbLabel"><strong>DB:</strong> Verificando...</span>
-            `;
-            dbPill.onclick = () => {{
-                fetch('/api/cloud/db/status').then(r => r.json()).then(d => {{
-                    if (d.status === 'connected') {{
-                        alert('✅ BANCO POSTGRESQL ATIVO!\nHost: ' + d.database.host + '\nBase: ' + d.database.database + '\nDriver: ' + (d.database.drivers?.pg8000 ? 'pg8000' : 'psycopg2') + '\nStatus: Conectado e Operacional!');
-                    }} else {{
-                        alert('⚠️ BANCO POSTGRESQL AGUARDANDO LIBERAÇÃO:\nHost: ' + (d.database?.host || '167.249.121.40:5432') + '\nBase: ' + (d.database?.database || 'db_guilherme') + '\n\n' + d.instructions);
-                    }}
-                }});
-            }};
+                const dbPill = document.createElement('div');
+                dbPill.className = 'cloud-status-pill';
+                dbPill.id = 'cloudDbPill';
+                dbPill.title = 'Status do Banco de Dados Oficial PostgreSQL';
+                dbPill.innerHTML = `
+                    <i class="fa-solid fa-database" style="color: #60a5fa;"></i>
+                    <span id="cloudDbLabel"><strong>DB:</strong> Verificando...</span>
+                `;
+                dbPill.onclick = () => {{
+                    fetch('/api/cloud/db/status').then(r => r.json()).then(d => {{
+                        if (d.status === 'connected') {{
+                            alert('✅ BANCO POSTGRESQL ATIVO!\nHost: ' + d.database.host + '\nBase: ' + d.database.database + '\nDriver: ' + (d.database.drivers?.pg8000 ? 'pg8000' : 'psycopg2') + '\nStatus: Conectado e Operacional!');
+                        }} else {{
+                            alert('⚠️ BANCO POSTGRESQL AGUARDANDO LIBERAÇÃO:\nHost: ' + (d.database?.host || '167.249.121.40:5432') + '\nBase: ' + (d.database?.database || 'db_guilherme') + '\n\n' + d.instructions);
+                        }}
+                    }});
+                }};
 
-            if (brandWrap) {{
-                brandWrap.appendChild(pill);
-                brandWrap.appendChild(dbPill);
-            }}
-
-            // Atualiza status do banco
-            fetch('/api/cloud/db/status').then(r => r.json()).then(d => {{
-                const label = document.getElementById('cloudDbLabel');
-                const pillEl = document.getElementById('cloudDbPill');
-                if (label && pillEl) {{
-                    if (d.status === 'connected') {{
-                        label.innerHTML = '<strong>DB:</strong> Online';
-                        pillEl.style.borderColor = 'rgba(16, 185, 129, 0.5)';
-                        pillEl.style.background = 'rgba(16, 185, 129, 0.1)';
-                    }} else {{
-                        label.innerHTML = '<strong>DB:</strong> Porta 5432';
-                        pillEl.style.borderColor = 'rgba(245, 158, 11, 0.5)';
-                        pillEl.style.background = 'rgba(245, 158, 11, 0.1)';
-                    }}
+                if (brandWrap) {{
+                    brandWrap.appendChild(pill);
+                    brandWrap.appendChild(dbPill);
                 }}
-            }}).catch(e => {{}});
+
+                // Atualiza status do banco
+                fetch('/api/cloud/db/status').then(r => r.json()).then(d => {{
+                    const label = document.getElementById('cloudDbLabel');
+                    const pillEl = document.getElementById('cloudDbPill');
+                    if (label && pillEl) {{
+                        if (d.status === 'connected') {{
+                            label.innerHTML = '<strong>DB:</strong> Online';
+                            pillEl.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+                            pillEl.style.background = 'rgba(16, 185, 129, 0.1)';
+                        }} else {{
+                            label.innerHTML = '<strong>DB:</strong> Porta 5432';
+                            pillEl.style.borderColor = 'rgba(245, 158, 11, 0.5)';
+                            pillEl.style.background = 'rgba(245, 158, 11, 0.1)';
+                        }}
+                    }}
+                }}).catch(e => {{}});
+            }}
 
             const actionsWrap = document.querySelector('.header-right-actions');
             if (actionsWrap && !document.getElementById('cloudLogoutBtn')) {{
@@ -545,16 +572,41 @@ def dashboard_page():
         }}
 
         function startCloudSyncPolling() {{
-            setInterval(async () => {{
+            const pullTelemetry = async () => {{
                 try {{
                     const res = await fetch('/api/cloud/sync/pull');
                     const json = await res.json();
                     if (json.status === 'success' && json.data) {{
+                        const d = json.data;
                         const pulse = document.getElementById('cloudPulse');
                         if (pulse) pulse.classList.remove('offline');
+
+                        const lbl = document.getElementById('cloudDeviceLabel');
+                        if (lbl && (json.computer_id || d.computer_id)) {{
+                            lbl.innerHTML = '<strong>PC:</strong> ' + (json.computer_id || d.computer_id);
+                        }}
+
+                        // Alimenta gráfico Chart.js Telemetria de Host (CPU % & RAM %)
+                        if (d.health && typeof pushTelemetryDataPoint === 'function') {{
+                            pushTelemetryDataPoint(d.health.cpu_percent || 0, d.health.memory_percent || 0);
+                        }}
+
+                        // Alimenta taxa de eventos Throughput
+                        if (d.recent_events && typeof pushEventThroughput === 'function') {{
+                            pushEventThroughput(d.recent_events.length || 1);
+                        }}
+
+                        // Atualiza valores nas métricas se disponíveis
+                        const cpuLive = document.getElementById('cpuLiveVal');
+                        if (cpuLive && d.health) cpuLive.innerText = (d.health.cpu_percent || 0) + '%';
+                        const ramLive = document.getElementById('ramLiveVal');
+                        if (ramLive && d.health) ramLive.innerText = (d.health.memory_percent || 0) + '%';
                     }}
                 }} catch (e) {{}}
-            }}, 15000);
+            }};
+
+            pullTelemetry();
+            setInterval(pullTelemetry, 3500);
         }}
     </script>
     """
@@ -1025,16 +1077,62 @@ def _get_active_telemetry_or_default():
     user = get_current_user()
     if not user:
         return None
-    with get_db() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT t.snapshot_json FROM devices d JOIN telemetry t ON d.computer_id = t.computer_id WHERE d.user_id = ? ORDER BY d.last_seen DESC LIMIT 1", (user["user_id"],))
-        row = cur.fetchone()
-        if row and row["snapshot_json"]:
-            try:
+
+    # 1. Tenta recuperar do PostgreSQL oficial
+    if pg_manager:
+        try:
+            devs = pg_manager.get_devices(user["user_id"])
+            if devs:
+                snap = pg_manager.get_telemetry_snapshot(devs[0]["computer_id"])
+                if snap and snap[0]:
+                    return snap[0]
+        except Exception:
+            pass
+
+    # 2. Tenta recuperar do Cloud Relay pub/sub
+    try:
+        relay_snapshot = pull_telemetry_from_relay(user["user_id"])
+        if relay_snapshot:
+            return relay_snapshot
+    except Exception:
+        pass
+
+    # 3. Tenta SQLite local
+    try:
+        with get_db() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT t.snapshot_json FROM devices d JOIN telemetry t ON d.computer_id = t.computer_id WHERE d.user_id = ? ORDER BY d.last_seen DESC LIMIT 1", (user["user_id"],))
+            row = cur.fetchone()
+            if row and row["snapshot_json"]:
                 return json.loads(row["snapshot_json"])
-            except Exception:
-                pass
+    except Exception:
+        pass
+
     return None
+
+@app.route("/api/system/resources", methods=["GET"])
+def api_system_resources():
+    telemetry = _get_active_telemetry_or_default() or {}
+    health = telemetry.get("health", {})
+    stats = telemetry.get("stats", {})
+    return jsonify({
+        "status": "success",
+        "cpu_percent": health.get("cpu_percent", 0.0),
+        "memory_percent": health.get("memory_percent", 0.0),
+        "disk_percent": health.get("disk_percent", 0.0),
+        "processes_count": stats.get("monitored_processes", 0)
+    })
+
+@app.route("/api/status", methods=["GET"])
+def api_status():
+    telemetry = _get_active_telemetry_or_default() or {}
+    return jsonify({
+        "status": "ONLINE",
+        "cloud_mode": True,
+        "mode": "Sovereign Active Defense",
+        "active_modules": 53,
+        "telemetry": telemetry
+    })
 
 @app.route("/api/health", methods=["GET"])
 def api_health():

@@ -268,12 +268,12 @@ def main():
         honeyfiles_guard=ransomware_canary
     )
 
-    # 16.5. Inicia Sincronizador de Nuvem Soberana
+    # 16.5. Inicia Sincronizador de Nuvem Soberana (Stream em Tempo Real)
     try:
         from sentinel_core.cloud_sync import CloudSyncWorker
-        cloud_sync = CloudSyncWorker(interval_seconds=15)
+        cloud_sync = CloudSyncWorker(interval_seconds=5)
         cloud_sync.start()
-        logging.info("[+] Sincronizador Cloud ativo em segundo plano.")
+        logging.info("[+] Sincronizador Cloud em Tempo Real ativo (5s).")
     except Exception as e:
         logging.debug(f"[CLOUD SYNC INIT ERROR] {e}")
 
