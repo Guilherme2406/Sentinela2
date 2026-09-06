@@ -167,7 +167,7 @@ class Honeypot:
 
         self.canary_thread = threading.Thread(target=self._monitor_canary_files_loop, daemon=True)
         self.canary_thread.start()
-        logging.info(f"[HONEYPOT] Decepção ativa em execução.")
+        logging.info("[HONEYPOT] Decepção ativa em execução.")
 
     start_honeypots = start
 

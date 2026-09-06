@@ -87,6 +87,8 @@ class ThreatDetector:
         if file_hash:
             self.known_malware_hashes.add(file_hash.lower().strip())
 
+    add_threat_hash = add_ioc_hash
+
     def remove_ioc_hash(self, file_hash: str):
         """Remove um hash da base de IOCs."""
         self.known_malware_hashes.discard(file_hash.lower().strip())

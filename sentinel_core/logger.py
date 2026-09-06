@@ -5,10 +5,12 @@ import logging
 from contextlib import closing
 from typing import List, Tuple, Dict, Any, Optional
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] [SENTINEL-LOG] %(message)s'
-)
+# NOTE: NÃO configuramos logging.basicConfig() aqui. Isso permite que cada
+# ponto de entrada (main.py, sentinela_service.py, sentinel_cli.py) defina
+# o destino real dos logs (console ou arquivo). Antes, o basicConfig deste
+# módulo instalava um StreamHandler primeiro e os basicConfig() dos pontos
+# de entrada eram ignorados — o que impedia, por exemplo, a gravação efetiva
+# de logs do daemon em 'sentinel_daemon.log'.
 
 class SecurityEventLogger:
     """Gerenciador de armazenamento seguro de logs de auditoria e segurança em SQLite."""
@@ -183,15 +185,22 @@ class SecurityEventLogger:
     def vacuum_database(self) -> bool:
         """Executa VACUUM no banco SQLite para desfragmentar e devolver espaço ao disco do SO."""
         with self._lock:
+            conn = None
             try:
                 conn = self._get_connection()
                 conn.isolation_level = None  # Requer autocommit
                 conn.execute("VACUUM;")
-                conn.close()
                 return True
             except Exception as e:
                 logging.warning(f"[LOGGER] Erro ao executar VACUUM: {e}")
                 return False
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
 
     # Alias de compatibilidade
     def get_logs(self, category: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:

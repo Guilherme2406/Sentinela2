@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import json
 import socket
+import secrets
 import logging
 import threading
 from dataclasses import dataclass, field, asdict
@@ -89,6 +90,9 @@ def _ensure_dir(path: str) -> None:
         pass
 
 
+_WEAK_TOKENS = ("", "sentinel-master-secret-token", "token-compartilhado-opcional", "sentinel-secret")
+
+
 def load_config(path: Optional[str] = None) -> MultiAgentConfig:
     """Carrega a configuração multi-host do arquivo JSON (criando o padrão se ausente)."""
     cfg_path = path or default_config_path()
@@ -97,6 +101,12 @@ def load_config(path: Optional[str] = None) -> MultiAgentConfig:
             with open(cfg_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             cfg = MultiAgentConfig.from_dict(data)
+            # Rotação automática de tokens fracos/placeholder: garante um segredo
+            # forte compartilhado para autenticação hub <-> agentes.
+            if cfg.enabled and (not cfg.token or cfg.token in _WEAK_TOKENS):
+                cfg.token = secrets.token_urlsafe(32)
+                _persist(cfg, cfg_path)
+                logger.warning("[MULTI-AGENT] Token de frota fraco/placeholder detectado. Novo token seguro gerado automaticamente.")
             logger.info(f"[MULTI-AGENT] Config carregada de {cfg_path} (papel: {cfg.role}).")
             return cfg
         except Exception as e:

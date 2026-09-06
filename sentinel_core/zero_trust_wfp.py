@@ -35,12 +35,66 @@ class ZeroTrustNetworkEngine:
         self.firewall = firewall_manager
         self.ztna = ztna_engine
         self.allowed_subnets: List[str] = ["10.0.0.0/8", "192.168.1.0/24"]
+        self.allowed_management_ips: Set[str] = {"127.0.0.1", "::1"}
+        self.allowed_management_ports: Set[int] = {5000, 8000, 8443}
+        self.is_host_isolated: bool = False
         logger.info("🛡️ Motor Zero-Trust WFP Driver inicializado (Microsegmentação Ativa).")
+
+    def configure_management_channel(self, ips: Optional[List[str]] = None, ports: Optional[List[int]] = None) -> Dict[str, Any]:
+        """Configura IPs e Portas de Gestão/SOC que permanecem autorizados mesmo sob isolamento total."""
+        if ips:
+            for ip in ips:
+                clean_ip = str(ip).strip()
+                if clean_ip:
+                    self.allowed_management_ips.add(clean_ip)
+        if ports:
+            for port in ports:
+                if isinstance(port, int) and 0 < port <= 65535:
+                    self.allowed_management_ports.add(port)
+        return {
+            "status": "success",
+            "allowed_management_ips": list(self.allowed_management_ips),
+            "allowed_management_ports": list(self.allowed_management_ports)
+        }
+
+    def isolate_host_granular(self, reason: str = "EMERGENCY_ISOLATION", preserve_management: bool = True) -> Dict[str, Any]:
+        """Aplica isolamento de host preservando o canal seguro de gestão para o SOC."""
+        self.is_host_isolated = True
+        logger.critical(f"🛑 [ZTNA WFP] ISOLAMENTO GRANULAR ATIVADO! Motivo: {reason} | Gestão Preservada: {preserve_management}")
+        if self.ztna:
+            self.ztna.record_threat_event("HOST_ISOLATION", severity="CRITICAL", details=reason)
+        return {
+            "status": "success",
+            "host_isolated": True,
+            "preserve_management": preserve_management,
+            "management_ports": list(self.allowed_management_ports) if preserve_management else [],
+            "management_ips": list(self.allowed_management_ips) if preserve_management else []
+        }
 
     def inspect_packet(self, src_ip: str, dst_ip: str, dst_port: int, process_name: str) -> Dict[str, Any]:
         """
         Inspeciona cada tentativa de conexão de saída/entrada no nível de driver.
         """
+        # Preserva canal de gestão do SOC mesmo com isolamento ativo
+        if dst_port in self.allowed_management_ports or dst_ip in self.allowed_management_ips or src_ip in self.allowed_management_ips:
+            return {
+                "action": "ALLOW",
+                "bypass_reason": "MANAGEMENT_CHANNEL_PRESERVED",
+                "src_ip": src_ip,
+                "dst_ip": dst_ip,
+                "dst_port": dst_port
+            }
+
+        # Se o host estiver em isolamento de emergência, bloqueia todo o tráfego não-gestão
+        if self.is_host_isolated:
+            return {
+                "action": "BLOCK",
+                "reason": "HOST_UNDER_EMERGENCY_ISOLATION",
+                "src_ip": src_ip,
+                "dst_ip": dst_ip,
+                "dst_port": dst_port
+            }
+
         proc_clean = (process_name or "").lower()
 
         # 1. Se o IP já está na lista de bloqueio Zero-Trust

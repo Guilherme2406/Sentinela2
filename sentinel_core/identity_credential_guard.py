@@ -236,7 +236,7 @@ class IdentityCredentialGuard:
             try:
                 self.logger.log_event(severity, "IDENTITY_GUARD", target, message)
             except Exception as e:
-                logger.error(f"[IDENTITY_GUARD] Falha ao gravar log de segurança: {e}")
+                _sys_log.error(f"[IDENTITY_GUARD] Falha ao gravar log de segurança: {e}")
 
         if self.orchestrator:
             try:
@@ -253,7 +253,7 @@ class IdentityCredentialGuard:
                 )
                 self.orchestrator.emit(event)
             except Exception as e:
-                logger.debug(f"[IDENTITY_GUARD] Erro ao emitir evento ao orquestrador: {e}")
+                _sys_log.debug(f"[IDENTITY_GUARD] Erro ao emitir evento ao orquestrador: {e}")
 
     def scan_running_processes_and_cmdlines(self) -> List[Dict[str, Any]]:
         """
@@ -383,8 +383,14 @@ class IdentityCredentialGuard:
             else:
                 # Fallback nativo do Windows
                 if sys.platform == "win32":
-                    os.system(f"taskkill /F /PID {pid} /T >nul 2>&1")
+                    import subprocess
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid), "/T"],
+                        capture_output=True,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                    )
                     success = True
+
 
             _sys_log.warning(f"⚡ [IDENTITY_GUARD] Processo atacante PID {pid} neutralizado forçadamente. Motivo: {reason}")
             self._log_event("HIGH", "THREAT_TERMINATED", f"PID:{pid}", f"Processo neutralizado com sucesso: {reason}")

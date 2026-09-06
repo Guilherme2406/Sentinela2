@@ -1,0 +1,151 @@
+{
+  "manifest": {
+    "format": "SENTINEL-WORM-AUDIT-V1",
+    "package_id": "WORM-AUDIT-1788588658-413fcebc",
+    "exported_at": 1788588658.1040115,
+    "record_count": 10,
+    "start_id": 1,
+    "end_id": 10,
+    "chain_root_hash": "45ca85c9260556c9de93aac84569f0384b0ac61783f325272e1b3b8fe7c5c170",
+    "chain_integrity_status": "CHAIN_VERIFIED_INTACT",
+    "system_node": "DESKTOP-LH8P6EG"
+  },
+  "pqc_integrity_seal": {
+    "algorithm": "ML-DSA-87 (FIPS 204, nível 5)",
+    "signature": "PQC_MLDSA87_V1:dY2O6jrKGaIIZciHfU33VgBon/K+KLtlQJBhHfr/QZ98iigMcmC6V8+E+Ru0x+7dnrnPYZ0PmV2FMceAXyZhJZLK7pkaXI8yWNIW4AXp78FrWphM5/qPgJ3O+I/KC17Wb0Em4+vXRwVnUWCaCCeLPbrbPOWuGMkdwt3PaHSRrGc0G1mkMjlP8bWV67XFJeVB01hLMQYaeeg21Tded7ytRiHKQi0s6ykCwylk1GyLbhhh72cIeJFdFwcFhrGxVJgkfa//Xg929O0Q3NieHfeBqF/kSlyNLbUH8VvjobYADT1LuYUYiBa+YjwH3DjvyuBaGE/pOKUlzRgZb4iH9jnm/Qt2VVkRpnANk4wqP91DKbH8I/rur+QCNlzF+ewJNKrFuvzlZ7cYqzwY21/krvAg8aw5x538UR55U6Se4DKUmjGXij9XeJvV+KyaMCGG9UICj+wj2CyMQiWvqvbPFaPTGCF5UdJoohMhN0b/XvRctu/uB60jROx5Yi+XkKxSZ44rkY1TzsO9LZeC23//MctPB3HPevGzoYkxRI+C8FqHLBiDuAvorpZXwBI4edK0FxY1iAYcChMHnDfyhOtdEyaTqSDLUxxuiNkFO1updd06eTKHYhe2aZoYHyNHjbAZP9GDcd/NjPR/e0ADhcTmID/xLz9x3lRR+0i3nAz+sIP58FgZ1uCw5k5vJetcP6EPeFExcVf2JJ5uTy26vRUhs1Ph3zmHZsCgt/bDma7BY21X1wtoU9ObbCg4jIB7jPrAFekUOzaJrWhFX+QHAScxJ5lEXfJjmDWnmEGXIlukURFg3Rc/ZOiTNPv1U7tbN138I/uliIzpQLROrnf4E05BYnoK8YZgqWPvPo4xBuICoQ+S0J6lhzQyf+LdXoueZfbTTjTWbwdogZc6LF9Qrwd/Di0sSTNozECg54Cb/c9qfFG7QyfibejVSJPIPh7G1A/sdulvwoEMF2exMBoV8B/rWV3zQRipE8TLGV11Cm43uF1qoMqqEQjUR77ttr8Hj9/1qebxfCIcBHLH0L5FdSIfpkTNN9GkP2oxs6qb7UZwtKEVbuHy17NThfwhcIdm57zDinyAWT84SLUm2lu509mmscpv1lYa8tW5jjaCPZwKGtWxU1ALW9EFD3XSeI1noaXJKnZ8NoIQCv8hb1kiTqIGGXT4KSDEui/7uErJThWT5s9iSGNCORNLym5SKAFvyqc2IPog7WJc//VElWAFAo5OTbfHsaCgQFUBQ8bi8Lf6vSngRcBuHamJrQonuPUSQTlbc3+252HRYcVhJET4bmPiGKqFRhBRA12AZuTB7mG1LDXHPGUCoiC4//t4D+oNbLlTFMMpwQH/+bSBJBS6uA/HkNzF4AXuWLaq+GYdmYpwwVcr8JmSoE9jwbjJD3tIRzV6gmSsXELSDvhMEdgSvmeaplo9OYw7FleOcmxW0eIwIrk7REzmfEsv4d/iWrTaDiXe9BHQgsozm91IPEot2NEcsKKIf0dPyhn4x7vI+tPEgqI5p8alBZqymQ7XU2vuRRMciciqLBWJyK33O8d7PHb/M57wuLcLWtof/xHpMjju0tjD7KDlUHVujrIwjV8tCCCNeHm3TWcAHS6NFQ6z15t9U909/FFgb9JWIT8NYG4DNyclkhV2KJpqdu+PINzCuwyCQ39uk3kD/Z53fSfZ8gFoHmsE7zFDHqnnkZrObpxZPgo7onCYlzyM3UGJDCIRhPYl0Qoa56/Bll/MgJHKkqQc8+0nFmN2+N4oWOGJUKSJAWHrzsDE7PuKw1NnAnqQCxBY0jzl1xxhNvKGU42E2vT7qreDHs1qTNWOzn7ylRsJfACF5dmKDZkZdC5osoD1lMkacVdwxpWbPy7lj7mopQbu5u7eyBZ4Go0mWEVH71gr37aw98pYnNdpQMIUAlgz2PXDg2ac1Cr/9RUwLoh2Kd4tc21+0hcd4bmAKQjgOTvvlekk6yDL9PdpOVAAfY39G8+j+ye/MK2RUQq2htD+b2bj/8hhwXaChZ3yMsPYPHIjkRH3yfx/TkDEy6CKO8EV3ihz8XdybzZBJ+d56eUNT4vgJJmzodfc+u95UMK1Picg3VfC0TA9vQiOnaymMRvEqVMVqGxPQEsYNq3b7sszwK1Bxm8YfQ/En8Qtx3MsfYZcSoyJW5HESNq7Zkx+WJnZxWiqAtlW7OxJJ+cXZXuEmETUtvTi+NukQ2tcSsQPetY00M2OXt/JcS/SQ7eAu4wC6Reb6JrrbQ7GG1XNHg2KbCTfhWRykTye4i8ik16czfNQSKFm4qJSxvBbuGAdELnQ+BuXR6kpnvlcYDTiLeHWeX++lUvZ/fpMfkcDVaLSUEA72iTpvvhbFfZ1HrmzlqtWURo1N0nq06JRoJhYZDMzCtNkGN70rnj0wB3nqPot+mmZ9KFxFzrknxGJW7UIjU/8Y6uz86Vy3xyq+7HnjkQ+b3g4MtdzWCM5h0R5UyqO4NrgozdAaWQjJFs1zbjV7GO1sICeoiuASXqH12UyucXFPP3jszvvFRCBQiAgKYMJUPCOTctsDkr51AMOy3vV401AV0LI9gsQwVY9a1p5iGoA3gNT9AeegNdlWxm0EruEzQC3ntbMmctZwTIaTlxIZqpwEY7ELsM63vFV0QfDrb1YrYZvywILwXoJOtX3YbvsxVxvYYqLUTLUlpws7HU2mwwM22U52N22OJHOrx7x/bMsMALUMA3V1+ExFW/i2Sd+HjmiIa5Ew8tAw+rvA9J5F6WkGt0cLKWWFnnuvhmCgpW2X6nZ+QUyn16T6v709TnEd2RBLk6pAh7fFcrcIxc+rWJMP7W0Ayr+Sl27UfxqbeighyefvxkKpltj1pTLP7N5OS98/KLOHbZSiTMG8UHiMN9tQgms7Z+CmvoQ+RSwi1DLmwCjRreuJoyUVVgthz+hlvzvbIDEsvkEacaKCP0hyCGh0eGkY+MZY8l9DqzPm7I+20X7Q4Ou+prITRpe24Ynd9AAEZU0bOVoHSnFDLKoG7MvYbzKDSQXeLaVL5rkRCp+ptjENm3xCFq8IY/0EfqDZQAXCTQiNbyGU25cDlSRC/qyJ2ykr5qAEX3Ps2MeZfbt14i7pXzGU7rQrP1SGEWT1yslqhLuWT6aCNdweUQM+aY+4j7Fp73DFsWzjSNqZ3r1o7AqcVOrUWanvZl6ImV3pMncFDrbDPL1HqLhTZkZ+DMjwSdA6fhilOPMHYEN1KekKn03ZoyQtM7m848Nwf9bZwrlI/7qZHyt8ZDx14rcyka9DxHEYpesVARigWIJUsU8Y6jyI/zO7faXbrbnILBa8oWOyDDP05yqewCHZQrd7Z5zKsAIoLkxS2SNTl8iRkaSyRsN18vTWxSiHQ3DVT+qmHZRqUJ2HVPkHaqpknUj75l6kh89Cl+ekwDhuOh9jnUK1iZB5OlfbOH/AFalyIKOpEQpTnMoY4V7MlQYhiPlPPVpLSP00CE39GYnzQaUMXavtM6Py1QhZbTlHhmmRlV9Aiy054DbvEBOXSbWF3x/1JzrsKAGONzEth4XzIQj8vkvCfl9gIEqt/Wg3aH4zpM1+zS11hJtrKlVt4c37EzXOIRQrFWS7u3Z6l/e+l0bI5hwi18w2EncgDt7zP3sWKdb379JH/v+8ujNH5zOdr4gWtwpMLzfODUMddfoYYjnkUqPgp8iOIRwdEgo1MXKRtkGsFW2dKHeuLUXAKwsAocqOKrtzgwcmOqgmdPgA70pHXfrIEGWyTHA8I6RyGO3hYo9YWTTpARq+KQDyODZaAQmiS6mfyUGEgiTz0HnMacDaoX2af+5XXVYzajO0xmEdiCoxrrEbW2kqlC9m/OaGOF4Fe8+0jPuS/pCvo6Wv2yPoL5XpF3glRP8CBUQDzlpzYcXKU5ojgwtGZn2GrYyvnV1xIaAxor9Q1FboOP7LZASWyy58/8feZHRa/yC56BbrcRImLjLNgH01xx+heSVW59Khv/dtBvqrnKhw4k4qAdXlr9bxQqBic6Qjzt4SRDtDZ9gJbwAMCsGvz2stomF4fECNVDyyM3ZjOPeGdYtgIFgRnwzkEMYnSbI4jPP7/3CJ0nGb578g5nk5aQ7nSPJMfmSVz7qynVhTSfL/kVQ5jLD5BbLq9JJDK9P7nha1125VFNJWYVNlAGg0e4q+iJ2FQjDXwkr2VX9vEDSD8CvvGkRV5GwfkQZPEcACy/piZgXpzlI3XsiwNeN6P/2orWW0vlfwvvy+cWdZCvV4bdDF2sASZCbZKk42kFzwCufKhUuTukvU+ME8SU2HdcrhBW540AFY46sfybL/jsUCQcjv4g9RbfXoUyaqX4+59COpGmvQBy29kLq7mHj5UhrknoRaa7RDGwrhYe2IhIKYHyH7SphUpN/spPb6RrlcpP9o4ert1+HpF5c6jW3ze7uPqqpPjUhdAkXm0EG013QLtaatoJygVGg0HK5669ShWGXDYB7D7R4srwinO9ommGM3M8Jvovj/BTNumqmof9HBbGWbatXvo3rlKorRyekJmzebOnaDgnQdbONcO+zeb4pR/RViIOzbof3hg2AnSmNgBmnyBi7mkBn/Ov8FSqcTy+KqGa6Kqm4y6JqO5XNzfO2OJMnU1i4l/J6CldByvvQqgnILa6IliGm4xKfEIPx5JXbaZ7iheGeY3d4SfJ/W/UK/0jbSxzGh+tawDhOZRMBhjnj6uo2SnRQ5IalrGhyIvlYQGZyWpOZsd8MytXUvdYd9w3zHiXeigKAM4HnD46X8P9wTORI1hd3/sv7EvqTANVU+8/Nz9XMPpyyXXNlRo+8FNU6hJprbjGPiR+/LAMK7aCurHHOZFu3/iTz1A3V9noBNlC4FHASC1lcpAiDXQ2hv8XYwzx3BHuxIoz+Bkv5MQs3qWXdqD9K97XT3bOy78/Nwj8i6TyyIffxJW8lXQTCTAPkgVpT1urc3qaXmH5FLuMT3jDDC1I6mXPcSQ5ooVMUstnla5/egT/PZ2uLUounWotraA6/ufCocSNyD+jQDBU43kCd1aj1lL3StfmeQvfxiz37LyVkCxFlDHLT9ndbYrlEDpML2XUdY4JfIJ0hX0jJeG/qC2HC4hmW0vnQb4HGBo5jKFRarR0bvPzEDcEIebGNek1NnENu59Q1q95u2jSuKFYINHnKUwc3Ii1nOA+FZhcV9ODUrOJ7Smr+E3qvXWdWmuHGuOj27v+Q7kY4h3DzOPGNJfBTUEklrGv6wFv4q3qCSxfcf+S7EFLYGbeJN/ZlRj52/iWm6KZ7nGeLfXtnVi8ZS92Ms1IyM0KD893v+7RV/ZMQMtLEcPN0kitQT4KWUgJSbJIDzCin6Cj6EPR0oXQV3BCUEho2pyFXO4h3unyRGsAP3SniuUKLsAkVR2UwDZpFYXjfOsIVZMyqTllzN5l0Pt/HGYgkVFOuNURRnCX+O2j/V2M4aOB2kXSYINcJQQutvlHvCoCl47fYe4feoKuQwsWT7m5PNNVQpOn7Noe7yX7fdAgz3jbXVNYneOAoH9VIoNluunU5aNtqKK/NJhc9ZOtTX2ijvEHixWdr/bkNr5ZnD4C2W3Ts3e2ldeVrre1ae6R96zcCgxdmr9vAMk/kqv+5OF0fnF3uN8TmUg2sVFDrRrZ+Oe3B+yyBcZC+c5lHKA5EEfI7ApuWBAKb6CB/S6MuHUN+Az2Tc9IgoNNOqCc+XnDyNbQkdcgUFiN7fwg/KW2cmWbFf0Q/7JMGfqKBvtourrbkx3ixshG+mywoXloZ3FXzaPJ9v6PiXv/ZXojcSCqIbmNtR2tCOSdtlSdd7g1pcnZtxymOqt3NN4qy7rlpTZL854PH7cOWpqexihDUgcZDxs8XNqu45Ry7ifdMws9fv5ViiY2UK03/Qj+r+TSBs874m1W2iDPU+YfDU/heIKcAPvOb+MhDnm5hum6tYBQEoSD8JctnMHDKhCmSrd5ekuLte6qJsO6acCfXMnF9nhWJewmOqQmsOeLyFdrkmHhZQ4Q6Pk8bJgdlrP9YwBOG9a7jlHD4i2ysClJEnaGNWW3ru6EPMIj5K7vp+xsdOXCO1Nz2BeqvvtX3RVlO6nrnSEDUTelDsdMbHCE74gM4YWuf5fX9P2oXPEF4f/YTGiRTjZilvcjyaJS8vfL0NZ0AEyqQm7D4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFDQ8VHyUnLg==",
+    "signed_at": 1788588658.1040115,
+    "standard": "NIST FIPS 204 (ML-DSA-87)"
+  },
+  "records": [
+    {
+      "id": 1,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/config/shield",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586838.6433036,
+      "request_path": "/api/config/shield",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 2,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/rollback/snapshot",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.1596305,
+      "request_path": "/api/rollback/snapshot",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 3,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/rollback/restore",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.611047,
+      "request_path": "/api/rollback/restore",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 4,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/etw/simulate",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.6892576,
+      "request_path": "/api/etw/simulate",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 5,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/etw/simulate",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.7483737,
+      "request_path": "/api/etw/simulate",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 6,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/etw/simulate",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.7993877,
+      "request_path": "/api/etw/simulate",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 7,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/quarantine",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.8817222,
+      "request_path": "/api/quarantine",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 8,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/quarantine/restore",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586839.9927382,
+      "request_path": "/api/quarantine/restore",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 9,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/ztna/evaluate",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586840.0512173,
+      "request_path": "/api/ztna/evaluate",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    },
+    {
+      "id": 10,
+      "user": "Administrador",
+      "action": "API_POST",
+      "target": "/api/ztna/isolate",
+      "ip": "127.0.0.1",
+      "details": null,
+      "created_at": 1788586840.2597716,
+      "request_path": "/api/ztna/isolate",
+      "request_method": "POST",
+      "prev_hash": null,
+      "record_hash": null
+    }
+  ]
+}

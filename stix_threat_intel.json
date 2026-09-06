@@ -1,0 +1,107 @@
+{
+  "type": "bundle",
+  "id": "bundle--sentinela-1788589866",
+  "updated_at": 1788589866.7704463,
+  "objects": [
+    {
+      "type": "indicator",
+      "id": "indicator--cobaltstrike-c2-01",
+      "created": "2026-09-01T00:00:00.000Z",
+      "name": "Cobalt Strike TeamServer Node",
+      "pattern": "[ipv4-addr:value = '185.220.101.5']",
+      "pattern_type": "stix",
+      "indicator_types": [
+        "malicious-activity",
+        "c2"
+      ],
+      "confidence": 95,
+      "ioc_type": "ip",
+      "ioc_value": "185.220.101.5"
+    },
+    {
+      "type": "indicator",
+      "id": "indicator--ransomware-c2-02",
+      "created": "2026-09-01T00:00:00.000Z",
+      "name": "LockBit 3.0 Affiliate Gateway",
+      "pattern": "[ipv4-addr:value = '45.146.164.110']",
+      "pattern_type": "stix",
+      "indicator_types": [
+        "malware",
+        "ransomware"
+      ],
+      "confidence": 98,
+      "ioc_type": "ip",
+      "ioc_value": "45.146.164.110"
+    },
+    {
+      "type": "indicator",
+      "id": "indicator--dga-c2-domain",
+      "created": "2026-09-02T00:00:00.000Z",
+      "name": "Qakbot Fast-Flux Domain",
+      "pattern": "[domain-name:value = 'cobaltstrike-c2.ru']",
+      "pattern_type": "stix",
+      "indicator_types": [
+        "c2",
+        "malicious-activity"
+      ],
+      "confidence": 92,
+      "ioc_type": "domain",
+      "ioc_value": "cobaltstrike-c2.ru"
+    },
+    {
+      "type": "indicator",
+      "id": "indicator--mimikatz-hash",
+      "created": "2026-09-02T00:00:00.000Z",
+      "name": "Mimikatz Sekurlsa Binary Hash",
+      "pattern": "[file:hashes.'SHA-256' = 'c0202cfb0365eb2b9e64e5252d0f04c660424564c129e924a350175b9679f291']",
+      "pattern_type": "stix",
+      "indicator_types": [
+        "malware",
+        "credential-theft"
+      ],
+      "confidence": 99,
+      "ioc_type": "hash",
+      "ioc_value": "c0202cfb0365eb2b9e64e5252d0f04c660424564c129e924a350175b9679f291"
+    },
+    {
+      "type": "attack-pattern",
+      "id": "attack-pattern--process-hollowing",
+      "name": "Process Hollowing (T1055.012)",
+      "external_references": [
+        {
+          "source_name": "mitre-attack",
+          "external_id": "T1055.012"
+        }
+      ]
+    },
+    {
+      "type": "indicator",
+      "id": "indicator--dynamic-1788419784",
+      "created": "2026-09-03T07:16:24Z",
+      "name": "Akira Ransomware Affiliate IP",
+      "pattern": "[ipv4-addr:value = '194.26.29.112']",
+      "pattern_type": "stix",
+      "indicator_types": [
+        "ransomware"
+      ],
+      "confidence": 96,
+      "ioc_type": "ip",
+      "ioc_value": "194.26.29.112"
+    },
+    {
+      "type": "indicator",
+      "id": "indicator--dynamic-domain-1788419784",
+      "created": "2026-09-03T07:16:24Z",
+      "name": "BlackCat Exfiltration Drop",
+      "pattern": "[domain-name:value = 'alphv-drop.top']",
+      "pattern_type": "stix",
+      "indicator_types": [
+        "exfiltration",
+        "c2"
+      ],
+      "confidence": 94,
+      "ioc_type": "domain",
+      "ioc_value": "alphv-drop.top"
+    }
+  ]
+}

@@ -1,0 +1,202 @@
+{
+  "ferramenta": "Sentinela XDR — DynamicFileScanner",
+  "corpus": "C:\\Users\\Casa\\Desktop\\JarvisProjects\\Sentinela2\\test_corpus",
+  "metodologia": "Corpus de homologacao legal (EICAR + sinteticos + benignos)",
+  "amostras_totais": 17,
+  "metricas": {
+    "true_positive": 11,
+    "true_negative": 6,
+    "false_positive": 0,
+    "false_negative": 0,
+    "detection_rate_dr": 1.0,
+    "false_positive_rate_fpr": 0.0,
+    "precision": 1.0,
+    "f1_score": 1.0,
+    "accuracy": 1.0
+  },
+  "detalhamento": [
+    {
+      "file": "benign/chave_api_curta.bin",
+      "label": "CLEAN",
+      "predicted": false,
+      "sha256": "2a413141d75c31ef90709f4944513bb2ce714726e6453b5bcf9692c154d3054e",
+      "threats": [],
+      "entropy": 5.769,
+      "correct": true
+    },
+    {
+      "file": "benign/config_rede.json",
+      "label": "CLEAN",
+      "predicted": false,
+      "sha256": "cc9992880acfb123bef8d515cd92ce0165632d29f76c65be55711c53a8fe567f",
+      "threats": [],
+      "entropy": 4.288,
+      "correct": true
+    },
+    {
+      "file": "benign/log_repetitivo_server.txt",
+      "label": "CLEAN",
+      "predicted": false,
+      "sha256": "492549bcf04c8fff14390c3158f101efeae44b6dba9cbd5890eb33f65a9b1261",
+      "threats": [],
+      "entropy": 4.037,
+      "correct": true
+    },
+    {
+      "file": "benign/notas_reuniao.txt",
+      "label": "CLEAN",
+      "predicted": false,
+      "sha256": "a60238c24a7da69ac580dfbb3d19e31970a7b3853993736b92b6df3f13efbed2",
+      "threats": [],
+      "entropy": 4.719,
+      "correct": true
+    },
+    {
+      "file": "benign/relatorio_financeiro.txt",
+      "label": "CLEAN",
+      "predicted": false,
+      "sha256": "fac99f73b65b8a500d2596708a02fb814cec116138f2379e3dd33ed1f7c1c8f9",
+      "threats": [],
+      "entropy": 4.682,
+      "correct": true
+    },
+    {
+      "file": "benign/script_instalacao.py",
+      "label": "CLEAN",
+      "predicted": false,
+      "sha256": "fb7dbca16b858b2e61d092dcc89e6ed098aff6f3744b4f84b5e145e8e34386d3",
+      "threats": [],
+      "entropy": 4.129,
+      "correct": true
+    },
+    {
+      "file": "eicar/documento_infectado_eicar.txt",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "c99fec60a249d95dffbf8e2f0bd9ea12f1a500c2b0c83004b99096c881e82926",
+      "threats": [
+        "EICAR_AV_TEST_FILE"
+      ],
+      "entropy": 5.371,
+      "correct": true
+    },
+    {
+      "file": "eicar/eicar_crlf.com",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "8b3f191819931d1f2cef7289239b5f77c00b079847b9c2636e56854d1e5eff71",
+      "threats": [
+        "EICAR_AV_TEST_FILE"
+      ],
+      "entropy": 4.949,
+      "correct": true
+    },
+    {
+      "file": "eicar/eicar_standard.com",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "threats": [
+        "IOC_HASH_MATCH",
+        "EICAR_AV_TEST_FILE"
+      ],
+      "entropy": 4.872,
+      "correct": true
+    },
+    {
+      "file": "eicar/eicar_with_nl.com",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbdfd8267",
+      "threats": [
+        "EICAR_AV_TEST_FILE"
+      ],
+      "entropy": 4.911,
+      "correct": true
+    },
+    {
+      "file": "eicar/eicar_with_prefix.bin",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "39be9927d5e49c2abe692807b8454cc7eed97bcb5eb35707f749b224fef2b292",
+      "threats": [
+        "EICAR_AV_TEST_FILE"
+      ],
+      "entropy": 4.273,
+      "correct": true
+    },
+    {
+      "file": "synthetic/cobalt_reflective_dll.bin",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "afa4cf6e785e0309230de2df97222ead0103a889d3f19dd5b3bcee69653f9045",
+      "threats": [
+        "COBALT_STRIKE_REFLECTIVE_DLL"
+      ],
+      "entropy": 2.464,
+      "correct": true
+    },
+    {
+      "file": "synthetic/cryptominer_config.bin",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "836a84816783db82bd1bafc753ad16f3391684cce9736382ac54b87aeb923a43",
+      "threats": [
+        "CRYPTOMINER_STRATUM_POOL"
+      ],
+      "entropy": 4.338,
+      "correct": true
+    },
+    {
+      "file": "synthetic/injection_stub.bin",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "a549b02b0d6570739b05c8810557964795d29b8b3ab9b22a6674f339028da492",
+      "threats": [
+        "PROCESS_INJECTION_API",
+        "PROCESS_INJECTION_API",
+        "REMOTE_THREAD_INJECTION"
+      ],
+      "entropy": 4.354,
+      "correct": true
+    },
+    {
+      "file": "synthetic/mimikatz_sampler.bin",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "1b171d98edd9f20ccce1e966469696642371ddfc9c1ef4287ade6bff1bbf9327",
+      "threats": [
+        "CREDENTIAL_STEALER_MIMIKATZ",
+        "MIMIKATZ_SEKURLSA"
+      ],
+      "entropy": 4.504,
+      "correct": true
+    },
+    {
+      "file": "synthetic/powershell_obfuscated.ps1",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "e4fb633ea10bad7093e15051036de9dc4263e30b685de591236038a192f0a919",
+      "threats": [
+        "OBFUSCATED_POWERSHELL_PAYLOAD"
+      ],
+      "entropy": 4.55,
+      "correct": true
+    },
+    {
+      "file": "synthetic/ransomware_sim_rng.bin",
+      "label": "MALICIOUS",
+      "predicted": true,
+      "sha256": "a7f8947410c9440b0475a554dcad94e0c6be0f5b16e9cf8f9978eb4161857407",
+      "threats": [
+        "HIGH_ENTROPY_PACKED_PAYLOAD"
+      ],
+      "entropy": 7.953,
+      "correct": true
+    }
+  ],
+  "criteria_aceite": {
+    "detection_rate_dr_min": 0.92,
+    "false_positive_rate_fpr_max": 0.05
+  }
+}

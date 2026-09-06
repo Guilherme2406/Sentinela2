@@ -8,3 +8,5 @@ scikit-learn>=1.3.0
 numpy>=1.24.0
 requests>=2.31.0
 pywin32>=306
+# Motor YARA oficial (opcional — melhora detecção; wheels disponíveis p/ Windows CPython 3.x)
+# yara-python>=4.3.0

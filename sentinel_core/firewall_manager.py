@@ -1,10 +1,29 @@
 # sentinel_core/firewall_manager.py
+import re
+import ipaddress
 import subprocess
 import sys
 import time
 import logging
 from datetime import datetime
 from typing import Set, Dict, Any, List
+
+#: Whitelist estrita de caracteres seguros para a descrição da regra no shell/CMD
+_SAFE_REASON_RE = re.compile(r'[^A-Za-z0-9 _\-.,:()/]+')
+_IPV4_RE = re.compile(r'^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$')
+
+#: Redes privadas/link-local que NUNCA devem ser bloqueadas (evita auto-isolamento)
+_PRIVATE_NETWORKS = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("100.64.0.0/10"),
+    ipaddress.ip_network("192.0.0.0/24"),
+    ipaddress.ip_network("198.18.0.0/15"),
+    ipaddress.ip_network("0.0.0.0/8"),
+)
 
 class OSFirewallManager:
     """
@@ -28,32 +47,62 @@ class OSFirewallManager:
             self.logger.log_event(level, category, action, msg)
         logging.info(f"[{category}] {msg}")
 
+    @staticmethod
+    def _sanitize_reason(reason: str) -> str:
+        """Remove metacaracteres de shell/CMD da descrição para evitar injeção."""
+        reason = _SAFE_REASON_RE.sub(" ", str(reason or "")).strip()
+        return reason[:200] or "Ataque detectado pelo Sentinela XDR"
+
+    def _valid_ip(self, ip: str) -> bool:
+        """Valida se o IP é um IPv4 sintaticamente correto."""
+        if not ip or not isinstance(ip, str):
+            return False
+        return bool(_IPV4_RE.match(ip.strip()) and ip.count(".") == 3)
+
+    def _is_private_or_linklocal(self, ip: str) -> bool:
+        """Detecta IPs de redes privadas/locais que jamais devem ser banidos."""
+        try:
+            addr = ipaddress.IPv4Address(ip.strip())
+        except ipaddress.AddressValueError:
+            return True
+        return any(addr in net for net in _PRIVATE_NETWORKS)
+
     def is_banned(self, ip: str) -> bool:
         """Verifica se o IP está banido na camada ativa."""
         return ip in self.banned_ips
 
     def block_ip(self, ip: str, reason: str = "Ataque detectado pelo Sentinela XDR") -> bool:
         """Adiciona regra de bloqueio de IP no Firewall do SO e no XDR Shield."""
-        if not ip or ip in ("127.0.0.1", "localhost", "0.0.0.0") or ip.startswith("192.168."):
+        ip = str(ip or "").strip()
+        if not self._valid_ip(ip):
+            logging.warning(f"[FIREWALL] IP inválido ignorado: {ip!r}")
+            return False
+        if self._is_private_or_linklocal(ip):
+            logging.warning(f"[FIREWALL] IP de rede privada/local ignorado para bloqueio: {ip}")
             return False
 
         if ip in self.banned_ips:
             return True
 
+        reason = self._sanitize_reason(reason)
         rule_name = f"SENTINELA_BLOCK_{ip.replace('.', '_')}"
         kernel_enforced = False
 
         try:
             if self.is_windows:
-                cmd = f'netsh advfirewall firewall add rule name="{rule_name}" dir=in action=block remoteip={ip} description="{reason}"'
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=6)
+                cmd = ["netsh", "advfirewall", "firewall", "add", "rule",
+                       f"name={rule_name}", "dir=in", "action=block",
+                       f"remoteip={ip}", f"description={reason}"]
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if self.is_windows else 0
+                res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=6, creationflags=flags)
                 if res.returncode == 0:
                     kernel_enforced = True
             else:
-                cmd = f'iptables -A INPUT -s {ip} -j DROP'
-                res = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=6)
+                cmd = ["iptables", "-A", "INPUT", "-s", ip, "-j", "DROP"]
+                res = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=6)
                 if res.returncode == 0:
                     kernel_enforced = True
+
 
             # Registra o IP na camada do Sentinela
             self.banned_ips.add(ip)
@@ -80,17 +129,22 @@ class OSFirewallManager:
 
     def unblock_ip(self, ip: str) -> bool:
         """Remove regra de bloqueio do IP."""
+        ip = str(ip or "").strip()
+        if not self._valid_ip(ip):
+            return False
         if ip not in self.banned_ips:
             return False
 
         rule_name = f"SENTINELA_BLOCK_{ip.replace('.', '_')}"
         try:
             if self.is_windows:
-                cmd = f'netsh advfirewall firewall delete rule name="{rule_name}"'
-                subprocess.run(cmd, shell=True, capture_output=True)
+                cmd = ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}"]
+                flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if self.is_windows else 0
+                subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=6, creationflags=flags)
             else:
-                cmd = f'iptables -D INPUT -s {ip} -j DROP'
-                subprocess.run(cmd, shell=True, capture_output=True)
+                cmd = ["iptables", "-D", "INPUT", "-s", ip, "-j", "DROP"]
+                subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=6)
+
         except Exception:
             pass
 

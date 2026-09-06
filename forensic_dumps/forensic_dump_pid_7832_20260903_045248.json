@@ -1,0 +1,102 @@
+{
+  "metadata": {
+    "generated_at": 1788421968.0163682,
+    "timestamp_str": "20260903_045248",
+    "investigator": "Sentinela XDR Autonomous Engine",
+    "pid": 7832,
+    "process_name": "python.exe",
+    "exe_path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+    "cmdline": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe smoke_test_engines.py",
+    "user": "DESKTOP-LH8P6EG\\Casa",
+    "threads": 31,
+    "handles": 304
+  },
+  "network_telemetry": [
+    {
+      "fd": -1,
+      "family": "2",
+      "type": "1",
+      "laddr": "0.0.0.0:2222",
+      "raddr": "",
+      "status": "LISTEN"
+    }
+  ],
+  "vad_memory_regions_count": 244,
+  "vad_sample": [
+    {
+      "path": "C:\\Windows\\System32\\C_1252.NLS",
+      "rss": 139264,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\C_850.NLS",
+      "rss": 139264,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\l_intl.nls",
+      "rss": 24576,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\locale.nls",
+      "rss": 864256,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python3.dll",
+      "rss": 65536,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\pt-BR\\KernelBase.dll.mui",
+      "rss": 1495040,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\Globalization\\Sorting\\SortDefault.nls",
+      "rss": 3387392,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "rss": 106496,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\pyexpat.pyd",
+      "rss": 221184,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs\\_elementtree.pyd",
+      "rss": 139264,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\pywin32_system32\\pywintypes314.dll",
+      "rss": 155648,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\win32\\win32evtlog.pyd",
+      "rss": 90112,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\yaml\\_yaml.cp314-win_amd64.pyd",
+      "rss": 282624,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\ensemble\\_hist_gradient_boosting\\splitting.cp314-win_amd64.pyd",
+      "rss": 155648,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\ensemble\\_hist_gradient_boosting\\_predictor.cp314-win_amd64.pyd",
+      "rss": 86016,
+      "perms": ""
+    }
+  ]
+}

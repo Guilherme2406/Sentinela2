@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sentinela XDR — Configuração Sysmon ENDURECIDA (hardened)
+
+  Objetivo: telemetria real de Ring 3 via driver Sysmon, com hashing SHA-256,
+  linha de comando completa e foco nos Event IDs de maior valor analítico:
+    1  ProcessCreate           -> linha de comando completa + hash SHA256
+    3  NetworkConnect          -> conexões de rede (C2 / exfiltração)
+    5  ProcessTerminate
+    6  DriverLoad              -> drivers carregados (BYOVD)
+    7  ImageLoad               -> DLLs carregadas (hollowing)
+    8  CreateRemoteThread      -> injeção de thread remota
+    9  RawAccessRead           -> leitura bruta de disco (minikatz estilo)
+    10 ProcessAccess           -> acesso à memória (LSASS!)
+    11 FileCreate              -> tripwire de ransomware
+    13 RegistryValueSet        -> persistência (Run/RunOnce)
+    17/18 Pipe                 -> comunicação entre processos (impersonation)
+    22 DnsQuery                -> resolução DNS (DGA/túnel)
+    25 ProcessTampering        -> manipulação de processo protegido
+    26 FileDeleteDetected      -> exclusão em massa
+
+  Instalação:  sysmon64 -accepteula -i sysmon-config-hardened.xml
+  Validação:   wevtutil gl Microsoft-Windows-Sysmon/Operational
+-->
+<Sysmon schemaversion="4.50">
+  <HashAlgorithms>SHA256</HashAlgorithms>
+
+  <!-- Tamanho máximo da linha de comando capturada (complete) -->
+  <CommandLineLength>16384</CommandLineLength>
+
+  <EventFiltering>
+
+    <!-- Processo: registra TODOS (sem exclusões) com cmdline completa -->
+    <ProcessCreate onmatch="exclude"/>
+
+    <!-- Rede: registra todas as conexões -->
+    <NetworkConnect onmatch="exclude"/>
+
+    <!-- Terminação de processos -->
+    <ProcessTerminate onmatch="exclude"/>
+
+    <!-- Drivers: registra todos (inclusive vulneráveis/novos) -->
+    <DriverLoad onmatch="exclude"/>
+
+    <!-- Imagens/DLLs carregadas -->
+    <ImageLoad onmatch="exclude"/>
+
+    <!-- Injeção de thread remota -->
+    <CreateRemoteThread onmatch="exclude"/>
+
+    <!-- Acesso bruto a disco -->
+    <RawAccessRead onmatch="exclude"/>
+
+    <!-- Acesso a processos (correlação de LSASS é feita no Sentinel) -->
+    <ProcessAccess onmatch="exclude"/>
+
+    <!-- Criação de arquivos (tripwire massivo de ransomware) -->
+    <FileCreate onmatch="exclude"/>
+    <FileCreateTime onmatch="exclude"/>
+    <FileCreateStreamHash onmatch="exclude"/>
+
+    <!-- Alterações de registro (persistência/autorun) -->
+    <RegistryEvent onmatch="exclude"/>
+
+    <!-- Consultas DNS -->
+    <DnsQuery onmatch="exclude"/>
+
+    <!-- Pipes nomeados -->
+    <PipeEvent onmatch="exclude"/>
+
+    <!-- Integridade de processo e exclusão de arquivos -->
+    <ProcessTampering onmatch="exclude"/>
+    <FileDelete onmatch="exclude"/>
+    <FileDeleteDetected onmatch="exclude"/>
+
+  </EventFiltering>
+</Sysmon>

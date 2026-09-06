@@ -7,6 +7,7 @@ import threading
 import urllib.request
 import json
 import logging
+from typing import Optional, List, Dict, Any
 
 from PyQt6.QtWidgets import (
     QApplication, QSystemTrayIcon, QMenu, QMessageBox
@@ -85,6 +86,29 @@ class SentinelTrayApp:
             pass
         return f"http://localhost:{self.daemon.port}"
 
+    def get_api_token(self) -> Optional[str]:
+        """Obtém o token efêmero de autenticação local."""
+        try:
+            if os.path.exists(RUNTIME_FILE):
+                with open(RUNTIME_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    return data.get("api_token")
+        except Exception:
+            pass
+        return None
+
+    def make_api_request(self, endpoint: str, method: str = "GET", payload: Optional[dict] = None) -> urllib.request.Request:
+        """Cria uma requisição segura para a API com cabeçalho de autenticação X-Sentinel-Auth."""
+        url = f"{self.get_api_url()}{endpoint}"
+        body = json.dumps(payload).encode("utf-8") if payload else None
+        req = urllib.request.Request(url, data=body, method=method)
+        token = self.get_api_token()
+        if token:
+            req.add_header("X-Sentinel-Auth", token)
+        if body:
+            req.add_header("Content-Type", "application/json")
+        return req
+
     def _build_menu(self):
         self.menu.clear()
 
@@ -153,8 +177,7 @@ class SentinelTrayApp:
         """Dispara uma varredura geral na API do Sentinela."""
         def run():
             try:
-                url = f"{self.get_api_url()}/api/scan_now"
-                req = urllib.request.Request(url, method="POST")
+                req = self.make_api_request("/api/scan_now", method="POST")
                 with urllib.request.urlopen(req, timeout=4) as resp:
                     data = json.loads(resp.read().decode())
                     self.tray.showMessage(
@@ -171,8 +194,7 @@ class SentinelTrayApp:
         """Dispara a varredura EDR de processos."""
         def run():
             try:
-                url = f"{self.get_api_url()}/api/edr/remediate"
-                req = urllib.request.Request(url, method="POST")
+                req = self.make_api_request("/api/edr/remediate", method="POST")
                 with urllib.request.urlopen(req, timeout=4) as resp:
                     data = json.loads(resp.read().decode())
                     self.tray.showMessage(
@@ -189,8 +211,7 @@ class SentinelTrayApp:
         """Dispara a criação de um snapshot de segurança."""
         def run():
             try:
-                url = f"{self.get_api_url()}/api/rollback/snapshot"
-                req = urllib.request.Request(url, method="POST")
+                req = self.make_api_request("/api/rollback/snapshot", method="POST")
                 with urllib.request.urlopen(req, timeout=4) as resp:
                     data = json.loads(resp.read().decode())
                     self.tray.showMessage(
@@ -206,8 +227,7 @@ class SentinelTrayApp:
     def show_module_status(self):
         """Exibe uma janela com o status de todos os 14 módulos de defesa."""
         try:
-            url = f"{self.get_api_url()}/api/protection/diagnostics"
-            req = urllib.request.Request(url)
+            req = self.make_api_request("/api/protection/diagnostics", method="GET")
             with urllib.request.urlopen(req, timeout=3) as resp:
                 data = json.loads(resp.read().decode())
                 subsystems = data.get("subsystems", [])

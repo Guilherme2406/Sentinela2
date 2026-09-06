@@ -27,11 +27,21 @@ _jscheck*
 _edge*
 _smoke*
 _vd_out.txt
+_*.txt
+
+# Backups manuais de edição
+*.bak
 
 # Banco de dados e estado de execução soberano (gerados localmente)
 sentinel_events.db*
 sentinel_runtime.json
 sentinel_daemon.log
+
+# Chave-master criptográfica AES-256 (NUNCA versionar)
+sentinel.key
+
+# Configurações locais de identidade/controle de acesso (hashes de senha)
+rbac_config.json
 
 # Estado do modo Multi-Host (config local do nó + estado do hub)
 multiagent_config.json

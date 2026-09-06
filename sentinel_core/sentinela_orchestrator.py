@@ -73,6 +73,11 @@ class SentinelaOrchestrator:
         self.register_handler("ANTI_EXPLOIT_GUARD", self._correlate_anti_exploit)
         self.register_handler("NETWORK_PERIMETER_GUARD", self._correlate_perimeter_threat)
         self.register_handler("POSTURE_PERSISTENCE_GUARD", self._correlate_posture_threat)
+        self.register_handler("HOOK_INTEGRITY", self._correlate_hook_tamper)
+        self.register_handler("C2_BEACON", self._correlate_c2_beacon)
+        self.register_handler("TOKEN_ARMOR", self._correlate_token_armor)
+        self.register_handler("REVERSE_SHELL", self._correlate_reverse_shell)
+        self.register_handler("PORTSCAN_DISRUPTOR", self._correlate_portscan_disruptor)
 
     def register_handler(self, source: str, func: Callable):
         """Registra uma função ou corrotina para reagir a eventos de uma fonte específica."""
@@ -226,6 +231,59 @@ class SentinelaOrchestrator:
                 self.ztna.evaluate_posture(event_type="MALICIOUS_PERSISTENCE_DETECTED", payload=event.data)
             except Exception as e:
                 logger.debug(f"[ORCHESTRATOR] Erro ao notificar ZTNA sobre Persistência: {e}")
+
+    def _correlate_hook_tamper(self, event: SecurityEvent, context: SecurityContext):
+        """Adulteração de NTDLL/Hooking ou EDR Blinding detectado -> Elevação crítica de risco ZTNA e isolamento."""
+        func = event.data.get("function", "")
+        reason = event.data.get("reason", "")
+        logger.critical(f"🛑 [ORCHESTRATION HOOK-ARMOR] EDR Unhooking/Patching em {func} ({reason})! Contexto de risco elevado.")
+        if self.ztna:
+            try:
+                self.ztna.evaluate_posture(event_type="EDR_HOOK_TAMPER_DETECTED", payload=event.data)
+            except Exception as e:
+                logger.debug(f"[ORCHESTRATOR] Erro ao notificar ZTNA: {e}")
+
+    def _correlate_c2_beacon(self, event: SecurityEvent, context: SecurityContext):
+        """Conexão C2 periódica com jitter detectada -> Bloqueio e isolamento WFP."""
+        ip = event.data.get("dest_ip", "")
+        score = event.data.get("beacon_score", 0)
+        logger.critical(f"📡 [ORCHESTRATION C2-HUNTER] Canal C2 ativo para {ip} (Score: {score})! Contenção WFP confirmada.")
+        if ip and self.firewall:
+            try:
+                self.firewall.block_ip(ip, reason="C2 Beaconing Cadence Detected")
+            except Exception as e:
+                logger.debug(f"[ORCHESTRATOR] Erro ao bloquear IP C2: {e}")
+
+    def _correlate_token_armor(self, event: SecurityEvent, context: SecurityContext):
+        """Tentativa de Potato PrivEsc ou abuso de Token detectado -> Contenção SOAR e ZTNA."""
+        pname = event.data.get("process_name", "")
+        pid = event.data.get("pid", 0)
+        logger.critical(f"🥔 [ORCHESTRATION TOKEN-ARMOR] PrivEsc Potato interceptado: {pname} (PID: {pid}).")
+        if self.ztna:
+            try:
+                self.ztna.evaluate_posture(event_type="TOKEN_IMPERSONATION_DETECTED", payload=event.data)
+            except Exception as e:
+                logger.debug(f"[ORCHESTRATOR] Erro ao notificar ZTNA: {e}")
+
+    def _correlate_reverse_shell(self, event: SecurityEvent, context: SecurityContext):
+        """Reverse Shell interativo pós-exploit RCE -> Isolamento do host e corte WFP."""
+        pname = event.data.get("process_name", "")
+        logger.critical(f"🐚 [ORCHESTRATION REVERSE-SHELL] Shell reverso neutralizado: {pname}! Postura ZTNA penalizada.")
+        if self.ztna:
+            try:
+                self.ztna.evaluate_posture(event_type="INTERACTIVE_REVERSE_SHELL_DETECTED", payload=event.data)
+            except Exception as e:
+                logger.debug(f"[ORCHESTRATOR] Erro ao notificar ZTNA: {e}")
+
+    def _correlate_portscan_disruptor(self, event: SecurityEvent, context: SecurityContext):
+        """Varredura de portas interceptada -> Bloqueio de IP no firewall de perímetro."""
+        ip = event.data.get("attacker_ip", "")
+        logger.warning(f"🕳️ [ORCHESTRATION PORTSCAN] Varredura bloqueada e corrompida para IP {ip}.")
+        if ip and self.firewall:
+            try:
+                self.firewall.block_ip(ip, reason="Reconnaissance Port Scan Sweep")
+            except Exception as e:
+                logger.debug(f"[ORCHESTRATOR] Erro ao bloquear IP varredor: {e}")
 
     async def run(self):
         """Loop principal de despacho assíncrono."""

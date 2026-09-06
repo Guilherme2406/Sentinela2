@@ -1,0 +1,4 @@
+ATA DA REUNIAO
+Decidido: migrar servico de backup para storage em nuvem.
+Responsavel: TI.
+Prazo: 45 dias.

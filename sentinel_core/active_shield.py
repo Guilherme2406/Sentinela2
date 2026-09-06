@@ -104,7 +104,7 @@ class ActiveShield:
                 assessment["action_taken"] = "BLOCKED_AND_QUARANTINED"
                 self.logger.log_event("CRITICAL", "ACTIVE_SHIELD", "INBOUND_BLOCKED", log_msg)
             else:
-                logging.info(f"[ACTIVE SHIELD] ⚠️ INBOUND DETECTED (Modo Apenas Alerta): Arquivo mantido.")
+                logging.info("[ACTIVE SHIELD] ⚠️ INBOUND DETECTED (Modo Apenas Alerta): Arquivo mantido.")
                 assessment["action_taken"] = "ALERT_ONLY"
                 self.logger.log_event("HIGH", "ACTIVE_SHIELD", "INBOUND_ALERT", log_msg)
 
@@ -141,7 +141,7 @@ class ActiveShield:
                 assessment["action_taken"] = "BLOCKED_AND_KILLED"
                 self.logger.log_event("CRITICAL", "ACTIVE_SHIELD", "OUTBOUND_BLOCKED", log_msg)
             else:
-                logging.info(f"[ACTIVE SHIELD] ⚠️ OUTBOUND DETECTED (Modo Apenas Alerta): Conexão permitida.")
+                logging.info("[ACTIVE SHIELD] ⚠️ OUTBOUND DETECTED (Modo Apenas Alerta): Conexão permitida.")
                 assessment["action_taken"] = "ALERT_ONLY"
                 self.logger.log_event("HIGH", "ACTIVE_SHIELD", "OUTBOUND_ALERT", log_msg)
 

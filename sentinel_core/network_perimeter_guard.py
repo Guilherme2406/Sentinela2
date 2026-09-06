@@ -191,11 +191,20 @@ class NetworkPerimeterGuard:
         raw_output = custom_arp_output
         if raw_output is None:
             try:
-                res = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=4)
-                raw_output = res.stdout
+                res = subprocess.run(
+                    ["arp", "-a"],
+                    capture_output=True,
+                    text=True,
+                    errors="replace",
+                    timeout=4,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                )
+                raw_output = res.stdout or ""
             except Exception as e:
                 _sys_log.debug(f"[PERIMETER_GUARD] Falha ao executar 'arp -a': {e}")
                 raw_output = ""
+
+        raw_output = raw_output or ""
 
         # Mapeia { mac_address: [ips] }
         mac_to_ips: Dict[str, List[str]] = {}
@@ -204,6 +213,7 @@ class NetworkPerimeterGuard:
         arp_pattern = re.compile(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s+([0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2}[:-][0-9a-fA-F]{2})\s+(\w+)")
 
         for line in raw_output.splitlines():
+
             m = arp_pattern.search(line)
             if m:
                 ip, mac, arp_type = m.group(1), m.group(2).lower().replace("-", ":"), m.group(3)

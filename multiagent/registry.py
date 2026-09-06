@@ -138,7 +138,18 @@ class AgentRegistry:
             self._persist()
             return rec
 
+    def update_heartbeat(self, agent_id: str, **kwargs) -> HostRecord:
+        """Compatibilidade para registrar ou atualizar heartbeat de um agente."""
+        payload = {"agent_id": agent_id, **kwargs}
+        if "telemetry" in kwargs and "metrics" not in kwargs:
+            payload["metrics"] = kwargs["telemetry"]
+        rec = self.register(payload)
+        if "telemetry" in kwargs and isinstance(kwargs["telemetry"], dict):
+            self.update_telemetry(agent_id, kwargs["telemetry"])
+        return rec
+
     def update_telemetry(self, agent_id: str, metrics: Dict[str, Any]) -> Optional[HostRecord]:
+
         with self._lock:
             rec = self._hosts.get(agent_id)
             if rec is None:

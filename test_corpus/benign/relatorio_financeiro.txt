@@ -1,0 +1,4 @@
+Relatorio financeiro Q3
+Receita: 1.240.000
+Despesas: 870.500
+Lucro liquido: 369.500

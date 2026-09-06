@@ -4,6 +4,7 @@ import sys
 import shutil
 import psutil
 import logging
+import subprocess
 
 if sys.platform == "win32":
     try:
@@ -48,8 +49,13 @@ def remove_system_integration():
 
     # Remove regras de Firewall criadas na instalação
     for rule in ("SENTINEL_XDR_DASHBOARD", "SENTINEL_XDR_TARPIT", "SENTINEL_XDR_HONEYPOT"):
-        os.system(f'netsh advfirewall firewall delete rule name="{rule}" >nul 2>&1')
+        subprocess.run(
+            ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule}"],
+            capture_output=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        )
     print("   ✓ Regras de Firewall limpas.")
+
 
     print("\n🖥️  [3/4] Removendo atalhos do sistema...")
     desktop_dir = os.path.join(os.environ["USERPROFILE"], "Desktop")

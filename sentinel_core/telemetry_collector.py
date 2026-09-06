@@ -74,8 +74,8 @@ class SentinelTelemetryCollector:
 
         # 2. Métricas dos Motores Soberanos de Cibersegurança
         try:
-            # 20 Camadas Ativas
-            items.append(SecurityItem("sentinel.active_layers.count", "Camadas Ativas", 20, ts))
+            # 25 Camadas Ativas (matriz de diagnóstico soberana)
+            items.append(SecurityItem("sentinel.active_layers.count", "Camadas Ativas", 25, ts))
 
             # ZTNA CARTA Risk Score
             if self.ztna_engine and hasattr(self.ztna_engine, "current_risk_score"):
@@ -107,8 +107,8 @@ class SentinelTelemetryCollector:
                 items.append(SecurityItem("sentinel.quarantine.files_count", "Arquivos na Quarentena", 0, ts))
 
             # Arquivos no FIM
-            if self.fim and hasattr(self.fim, "baseline"):
-                fim_files = len(self.fim.baseline)
+            if self.fim and isinstance(getattr(self.fim, "file_hashes", None), dict):
+                fim_files = len(self.fim.file_hashes)
                 items.append(SecurityItem("sentinel.fim.files_monitored", "Arquivos no FIM", fim_files, ts))
 
             # Ameaças de Identidade Interceptadas

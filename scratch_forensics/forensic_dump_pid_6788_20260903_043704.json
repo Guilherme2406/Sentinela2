@@ -1,0 +1,93 @@
+{
+  "metadata": {
+    "generated_at": 1788421024.87513,
+    "timestamp_str": "20260903_043704",
+    "investigator": "Sentinela XDR Autonomous Engine",
+    "pid": 6788,
+    "process_name": "python.exe",
+    "exe_path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+    "cmdline": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe C:\\Users\\Casa\\.gemini\\antigravity-ide\\brain\\b7367982-2b4b-46c8-9ff9-c1db75ab0076\\scratch\\test_fase2.py",
+    "user": "DESKTOP-LH8P6EG\\Casa",
+    "threads": 21,
+    "handles": 240
+  },
+  "network_telemetry": [],
+  "vad_memory_regions_count": 225,
+  "vad_sample": [
+    {
+      "path": "C:\\Windows\\System32\\C_1252.NLS",
+      "rss": 139264,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\C_850.NLS",
+      "rss": 139264,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\l_intl.nls",
+      "rss": 24576,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\locale.nls",
+      "rss": 864256,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python3.dll",
+      "rss": 65536,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Windows\\System32\\pt-BR\\KernelBase.dll.mui",
+      "rss": 1495040,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+      "rss": 106496,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\ensemble\\_hist_gradient_boosting\\splitting.cp314-win_amd64.pyd",
+      "rss": 155648,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\ensemble\\_hist_gradient_boosting\\_predictor.cp314-win_amd64.pyd",
+      "rss": 86016,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\ensemble\\_hist_gradient_boosting\\histogram.cp314-win_amd64.pyd",
+      "rss": 143360,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\ensemble\\_gradient_boosting.cp314-win_amd64.pyd",
+      "rss": 90112,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\tree\\_partitioner.cp314-win_amd64.pyd",
+      "rss": 135168,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\tree\\_utils.cp314-win_amd64.pyd",
+      "rss": 81920,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\neighbors\\_quad_tree.cp314-win_amd64.pyd",
+      "rss": 126976,
+      "perms": ""
+    },
+    {
+      "path": "C:\\Users\\Casa\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\sklearn\\decomposition\\_cdnmf_fast.cp314-win_amd64.pyd",
+      "rss": 77824,
+      "perms": ""
+    }
+  ]
+}

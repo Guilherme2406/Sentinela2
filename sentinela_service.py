@@ -52,6 +52,17 @@ from sentinel_core.dlp_exfiltration_guard import DLPExfiltrationGuard
 from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
+from sentinel_core.hook_integrity_guard import HookIntegrityGuard
+from sentinel_core.c2_beacon_hunter import C2BeaconHunter
+from sentinel_core.token_armor_guard import TokenArmorGuard
+from sentinel_core.reverse_shell_guard import ReverseShellGuard
+from sentinel_core.portscan_disruptor import PortScanDisruptor
+from sentinel_core.byovd_guard import BYOVDGuard
+from sentinel_core.anti_hollowing_guard import AntiHollowingGuard
+from sentinel_core.lsass_guard import LSASSArmorGuard
+from sentinel_core.memory_rwx_hunter import MemoryRWXHunter
+from sentinel_core.ransomware_honeyfiles import RansomwareHoneyfiles
+from sentinel_core.api_security import get_or_create_api_token
 
 
 class SentinelThreadWatchdog:
@@ -126,6 +137,7 @@ class SentinelBackgroundDaemon:
                 "status": status,
                 "port": self.port,
                 "pid": os.getpid(),
+                "api_token": get_or_create_api_token(),
                 "timestamp": time.time(),
                 "url": f"http://localhost:{self.port}"
             }
@@ -216,12 +228,22 @@ class SentinelBackgroundDaemon:
         kernel_monitor = SystemKernelMonitor(logger=logger)
         ztna_engine = ZTNACARTAEngine(logger_instance=logger)
 
-        # Inicializa 5 Motores Soberanos Especializados
+        # Inicializa Motores Soberanos Especializados
         identity_guard = IdentityCredentialGuard(logger=logger, soar=soar)
         dlp_guard = DLPExfiltrationGuard(logger=logger, soar=soar)
         anti_exploit_guard = ExecutionAntiExploitGuard(logger=logger, soar=soar)
         perimeter_guard = NetworkPerimeterGuard(logger=logger, soar=soar)
         posture_guard = PosturePersistenceGuard(logger=logger, soar=soar)
+        hook_guard = HookIntegrityGuard(logger_instance=logger, soar=soar)
+        c2_hunter = C2BeaconHunter(logger_instance=logger, soar=soar, firewall=firewall_mgr)
+        token_armor = TokenArmorGuard(logger_instance=logger, soar=soar)
+        reverse_shell = ReverseShellGuard(logger_instance=logger, soar=soar, firewall=firewall_mgr)
+        portscan_disruptor = PortScanDisruptor(logger_instance=logger, soar=soar, firewall=firewall_mgr)
+        byovd_guard = BYOVDGuard(logger_instance=logger, soar=soar)
+        anti_hollowing = AntiHollowingGuard(logger_instance=logger, soar=soar)
+        lsass_guard = LSASSArmorGuard(logger_instance=logger)
+        rwx_hunter = MemoryRWXHunter(logger_instance=logger)
+        ransomware_canary = RansomwareHoneyfiles(logger_instance=logger)
 
         # 2. Inicializa API Web
         self.port = find_available_port(5000)
@@ -248,7 +270,17 @@ class SentinelBackgroundDaemon:
             dlp_guard=dlp_guard,
             anti_exploit_guard=anti_exploit_guard,
             perimeter_guard=perimeter_guard,
-            posture_guard=posture_guard
+            posture_guard=posture_guard,
+            hook_guard=hook_guard,
+            c2_hunter=c2_hunter,
+            token_armor=token_armor,
+            reverse_shell=reverse_shell,
+            portscan_disruptor=portscan_disruptor,
+            byovd_guard=byovd_guard,
+            anti_hollowing_guard=anti_hollowing,
+            lsass_guard=lsass_guard,
+            rwx_hunter=rwx_hunter,
+            honeyfiles_guard=ransomware_canary
         )
 
         self._save_runtime_state("running")
@@ -310,20 +342,29 @@ class SentinelBackgroundDaemon:
                 except Exception as e:
                     logging.debug(f"[TELEMETRY SCAN ERROR] {e}")
 
-                # Varreduras periódicas dos motores de identidade, exploit, perímetro e postura
+                # Varreduras periódicas dos motores soberanos especializados
                 if cycle % 3 == 0:
                     try:
                         identity_guard.scan_running_processes_and_cmdlines()
                         anti_exploit_guard.inspect_process_tree()
+                        token_armor.audit_running_processes_tokens()
+                        reverse_shell.scan_for_reverse_shells()
+                        c2_hunter.analyze_beaconing_patterns()
+                        lsass_guard.audit_lsass_access()
                     except Exception as e:
-                        logging.debug(f"[IDENTITY/EXPLOIT SCAN ERROR] {e}")
+                        logging.debug(f"[IDENTITY/EXPLOIT/TOKEN/SHELL/C2/LSASS SCAN ERROR] {e}")
 
                 if cycle % 6 == 0:
                     try:
                         perimeter_guard.audit_arp_table()
                         posture_guard.scan_asep_registry_and_files()
+                        hook_guard.audit_memory_hooks()
+                        anti_hollowing.scan_system_processes_integrity()
+                        rwx_hunter.scan_all_critical_processes()
+                        byovd_guard.audit_installed_services_registry()
+                        ransomware_canary.check_integrity()
                     except Exception as e:
-                        logging.debug(f"[PERIMETER/POSTURE SCAN ERROR] {e}")
+                        logging.debug(f"[PERIMETER/POSTURE/HOOK/HOLLOW/RWX/BYOVD/RANSOM SCAN ERROR] {e}")
 
                 time.sleep(5)
 

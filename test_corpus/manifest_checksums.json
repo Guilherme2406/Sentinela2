@@ -1,0 +1,108 @@
+{
+  "generated_by": "test_corpus/build_corpus.py",
+  "version": 1,
+  "samples": {
+    "benign/chave_api_curta.bin": {
+      "label": "CLEAN",
+      "sha256": "2a413141d75c31ef90709f4944513bb2ce714726e6453b5bcf9692c154d3054e",
+      "size_bytes": 64,
+      "description": "Chave de API (64 bytes aleatórios): abaixo do limite da heurística de entropia"
+    },
+    "benign/config_rede.json": {
+      "label": "CLEAN",
+      "sha256": "cc9992880acfb123bef8d515cd92ce0165632d29f76c65be55711c53a8fe567f",
+      "size_bytes": 84,
+      "description": "Configuração JSON de rede (conteúdo normal)"
+    },
+    "benign/log_repetitivo_server.txt": {
+      "label": "CLEAN",
+      "sha256": "492549bcf04c8fff14390c3158f101efeae44b6dba9cbd5890eb33f65a9b1261",
+      "size_bytes": 11400,
+      "description": "Log de servidor com linhas repetidas (baixa entropia)"
+    },
+    "benign/notas_reuniao.txt": {
+      "label": "CLEAN",
+      "sha256": "a60238c24a7da69ac580dfbb3d19e31970a7b3853993736b92b6df3f13efbed2",
+      "size_bytes": 106,
+      "description": "Ata de reunião corporativa"
+    },
+    "benign/relatorio_financeiro.txt": {
+      "label": "CLEAN",
+      "sha256": "fac99f73b65b8a500d2596708a02fb814cec116138f2379e3dd33ed1f7c1c8f9",
+      "size_bytes": 84,
+      "description": "Texto comum de relatório financeiro"
+    },
+    "benign/script_instalacao.py": {
+      "label": "CLEAN",
+      "sha256": "fb7dbca16b858b2e61d092dcc89e6ed098aff6f3744b4f84b5e145e8e34386d3",
+      "size_bytes": 65,
+      "description": "Script Python de instalação comum — sem strings maliciosas"
+    },
+    "eicar/documento_infectado_eicar.txt": {
+      "label": "MALICIOUS",
+      "sha256": "c99fec60a249d95dffbf8e2f0bd9ea12f1a500c2b0c83004b99096c881e82926",
+      "size_bytes": 192,
+      "description": "Documento 'legítimo' com string EICAR embutida — simula baixado com malware"
+    },
+    "eicar/eicar_crlf.com": {
+      "label": "MALICIOUS",
+      "sha256": "8b3f191819931d1f2cef7289239b5f77c00b079847b9c2636e56854d1e5eff71",
+      "size_bytes": 70,
+      "description": "EICAR com CRLF — variante comum em arquivos copiados pelo Windows"
+    },
+    "eicar/eicar_standard.com": {
+      "label": "MALICIOUS",
+      "sha256": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
+      "size_bytes": 68,
+      "description": "EICAR canônico (68 bytes) — padrão internacional de teste AV"
+    },
+    "eicar/eicar_with_nl.com": {
+      "label": "MALICIOUS",
+      "sha256": "131f95c51cc819465fa1797f6ccacf9d494aaaff46fa3eac73ae63ffbdfd8267",
+      "size_bytes": 69,
+      "description": "EICAR com quebra de linha (69 bytes) — variante real vista em downloads"
+    },
+    "eicar/eicar_with_prefix.bin": {
+      "label": "MALICIOUS",
+      "sha256": "39be9927d5e49c2abe692807b8454cc7eed97bcb5eb35707f749b224fef2b292",
+      "size_bytes": 148,
+      "description": "EICAR embutido após junk de bytes — detectável por assinatura, não pelo hash canônico"
+    },
+    "synthetic/cobalt_reflective_dll.bin": {
+      "label": "MALICIOUS",
+      "sha256": "afa4cf6e785e0309230de2df97222ead0103a889d3f19dd5b3bcee69653f9045",
+      "size_bytes": 98,
+      "description": "Indicador de beacon refletivo de Cobalt Strike (ReflectiveLoader)"
+    },
+    "synthetic/cryptominer_config.bin": {
+      "label": "MALICIOUS",
+      "sha256": "836a84816783db82bd1bafc753ad16f3391684cce9736382ac54b87aeb923a43",
+      "size_bytes": 63,
+      "description": "Configuração de minerador de criptomoeda (pool stratum)"
+    },
+    "synthetic/injection_stub.bin": {
+      "label": "MALICIOUS",
+      "sha256": "a549b02b0d6570739b05c8810557964795d29b8b3ab9b22a6674f339028da492",
+      "size_bytes": 70,
+      "description": "Cadela clássica de injeção de processo remoto (APIs perigosas)"
+    },
+    "synthetic/mimikatz_sampler.bin": {
+      "label": "MALICIOUS",
+      "sha256": "1b171d98edd9f20ccce1e966469696642371ddfc9c1ef4287ade6bff1bbf9327",
+      "size_bytes": 53,
+      "description": "String de roubo de credenciais (Mimikatz sekurlsa)"
+    },
+    "synthetic/powershell_obfuscated.ps1": {
+      "label": "MALICIOUS",
+      "sha256": "e4fb633ea10bad7093e15051036de9dc4263e30b685de591236038a192f0a919",
+      "size_bytes": 92,
+      "description": "Linha de comando PowerShell ofuscada base64 (injeção típica)"
+    },
+    "synthetic/ransomware_sim_rng.bin": {
+      "label": "MALICIOUS",
+      "sha256": "a7f8947410c9440b0475a554dcad94e0c6be0f5b16e9cf8f9978eb4161857407",
+      "size_bytes": 4096,
+      "description": "Bloco aleatório 4KB — simula conteúdo criptografado/pacote (alta entropia)"
+    }
+  }
+}

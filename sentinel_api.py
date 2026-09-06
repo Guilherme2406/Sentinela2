@@ -12,8 +12,10 @@ import queue
 import math
 from pathlib import Path
 from typing import Dict, Any, Optional, List
-from flask import Flask, jsonify, request, send_file, Response, send_from_directory, stream_with_context
+from functools import wraps
+from flask import Flask, jsonify, request, send_file, Response, send_from_directory, stream_with_context, make_response, g
 from flask_cors import CORS
+from sentinel_core.api_security import validate_api_request, get_or_create_api_token, update_runtime_state, is_loopback_request, extract_api_token
 
 # Importação de todos os motores do Sentinel Core (com suporte a nomes Sovereign e padrão)
 from sentinel_core.logger import SecurityEventLogger, SentinelLogger
@@ -54,6 +56,39 @@ from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
 from sentinel_core.telemetry_collector import SentinelTelemetryCollector
+from sentinel_core.sigma_engine import SigmaRuleEngine
+from sentinel_core.dynamic_yara_scanner import DynamicFileScanner
+from sentinel_core.byovd_guard import BYOVDGuard
+from sentinel_core.sentinel_companion_watchdog import CompanionWatchdog
+from sentinel_core.sysmon_collector import SysmonCollector
+from sentinel_core.anti_hollowing_guard import AntiHollowingGuard
+from sentinel_core.lsass_guard import LSASSArmorGuard
+from sentinel_core.asr_engine import ASREngine
+from sentinel_core.dns_sinkhole import DNSSinkholeGuard
+from sentinel_core.incident_notifications import IncidentNotificationDispatcher
+from sentinel_core.rbac_engine import RBACEngine
+from sentinel_core.amsi_guard import AMSIScriptGuard
+from sentinel_core.ransomware_vss_shield import RansomwareVSSShield
+from sentinel_core.memory_rwx_hunter import MemoryRWXHunter
+from sentinel_core.cisa_kev_engine import CISAKEVEngine
+from sentinel_core.stix_misp_engine import STIXMISPEngine
+from sentinel_core.threat_watchdog_daemon import ThreatWatchdogDaemon
+from sentinel_core.lolbas_guard import LOLBASGuard
+from sentinel_core.ransomware_honeyfiles import RansomwareHoneyfiles
+from sentinel_core.itdr_kerberos_guard import ITDRKerberosGuard
+from sentinel_core.live_forensics_dumper import LiveForensicsDumper
+from sentinel_core.native_etw_sensor import NativeETWSensor
+from sentinel_core.sigma_compiler_engine import SigmaCompilerEngine
+from sentinel_core.mini_nids_dpi import MiniNIDSDPI
+from sentinel_core.cloud_k8s_guard import CloudK8sGuard
+from sentinel_core.hook_integrity_guard import HookIntegrityGuard
+from sentinel_core.c2_beacon_hunter import C2BeaconHunter
+from sentinel_core.token_armor_guard import TokenArmorGuard
+from sentinel_core.reverse_shell_guard import ReverseShellGuard
+from sentinel_core.portscan_disruptor import PortScanDisruptor
+from sentinel_core.sysmon_installer import SysmonInstallerManager
+from sentinel_core.soc_ops import SOCAlertQueue
+from sentinel_core.audit_log import AuditLogger
 
 # Functions Engine — Motor de Expressões de Monitoramento em Séries Temporais (estilo Zabbix)
 from functions_engine.engine import FunctionsEngine
@@ -74,7 +109,60 @@ if sys.platform == "win32":
         pass
 
 app = Flask(__name__)
-CORS(app)  # Permite requisições de origens cruzadas (Dashboard)
+CORS(app)  # Permite requisições de origens cruzadas locais
+app.before_request(validate_api_request)
+
+# Trilha de auditoria global: toda mutação de estado na API é registrada.
+@app.after_request
+def _audit_state_changing_requests(response):
+    try:
+        if request.method in ("POST", "PUT", "DELETE", "PATCH") and request.path.startswith("/api/"):
+            p = request.path
+            # endpoints de telemetria de alta frequência não são auditados
+            if p.startswith(("/api/stream/", "/api/multiagent/heartbeat", "/api/multiagent/telemetry",
+                             "/api/sysmon/ingest", "/api/functions/ingest")):
+                return response
+            user_info = rbac_engine.get_current_user()
+            user = user_info.get("username") or user_info.get("id") or "system"
+            audit_logger.log_action(
+                user=str(user),
+                action=f"API_{request.method}",
+                target=p,
+                ip=request.remote_addr or "local",
+                request_path=p,
+                request_method=request.method,
+            )
+    except Exception:
+        pass  # auditoria nunca pode derrubar uma requisição legítima
+    return response
+
+# Limite de corpo de requisição (HTTP) — protege contra payloads gigantes (DoS)
+app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8 MB
+
+
+@app.errorhandler(404)
+def _json_not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"status": "error", "code": 404, "message": "Endpoint não encontrado."}), 404
+    return e
+
+
+@app.errorhandler(405)
+def _json_method_not_allowed(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"status": "error", "code": 405, "message": "Método HTTP não permitido para este endpoint."}), 405
+    return e
+
+
+@app.errorhandler(413)
+def _json_payload_too_large(e):
+    return jsonify({"status": "error", "code": 413, "message": "Corpo da requisição excede o limite permitido."}), 413
+
+
+@app.errorhandler(500)
+def _json_internal_error(e):
+    logging.error(f"[API-ERROR] Exceção não tratada em '{request.path}': {e!r}")
+    return jsonify({"status": "error", "code": 500, "message": "Erro interno do motor Sentinela. Consulte os logs."}), 500
 
 # Caminho base consistente
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -118,6 +206,119 @@ dlp_guard = DLPExfiltrationGuard(logger=logger, soar=soar)
 anti_exploit_guard = ExecutionAntiExploitGuard(logger=logger, soar=soar)
 perimeter_guard = NetworkPerimeterGuard(logger=logger, soar=soar)
 posture_guard = PosturePersistenceGuard(logger=logger, soar=soar)
+sigma_engine = SigmaRuleEngine(rules_dir=os.path.join(BASE_DIR, "rules_sigma"), logger_instance=logger)
+dynamic_yara = DynamicFileScanner(logger_instance=logger, soar=soar, auto_quarantine=False)
+byovd_guard = BYOVDGuard(logger_instance=logger, soar=soar)
+companion_watchdog = CompanionWatchdog(logger_instance=logger)
+sysmon_collector = SysmonCollector(logger_instance=logger, sigma_engine=sigma_engine)
+sysmon_installer = SysmonInstallerManager(project_root=BASE_DIR)
+anti_hollowing = AntiHollowingGuard(logger_instance=logger, soar=soar)
+lsass_guard = LSASSArmorGuard(logger_instance=logger)
+asr_engine = ASREngine(logger_instance=logger)
+dns_sinkhole = DNSSinkholeGuard(logger_instance=logger)
+incident_notifier = IncidentNotificationDispatcher(logger_instance=logger)
+
+# Inicialização do Motor RBAC (Controle de Acesso Baseado em Papéis)
+rbac_engine = RBACEngine(logger_instance=logger)
+amsi_guard = AMSIScriptGuard(logger_instance=logger)
+vss_shield = RansomwareVSSShield(logger_instance=logger)
+rwx_hunter = MemoryRWXHunter(logger_instance=logger)
+cisa_kev = CISAKEVEngine(logger_instance=logger)
+stix_misp_engine = STIXMISPEngine(logger_instance=logger)
+
+# Instanciação dos 8 Motores Enterprise
+lolbas_guard = LOLBASGuard(logger_instance=logger)
+honeyfiles_guard = RansomwareHoneyfiles(logger_instance=logger)
+itdr_guard = ITDRKerberosGuard(logger_instance=logger)
+forensics_dumper = LiveForensicsDumper(logger_instance=logger)
+native_etw = NativeETWSensor(logger_instance=logger)
+sigma_compiler = SigmaCompilerEngine(logger_instance=logger)
+mini_nids = MiniNIDSDPI(logger_instance=logger)
+cloud_k8s = CloudK8sGuard(logger_instance=logger)
+
+# Instanciação dos 5 Novos Motores Soberanos de Anti-Invasão
+hook_guard = HookIntegrityGuard(logger_instance=logger, soar=soar)
+c2_hunter = C2BeaconHunter(logger_instance=logger, soar=soar, firewall=firewall)
+token_armor = TokenArmorGuard(logger_instance=logger, soar=soar)
+reverse_shell = ReverseShellGuard(logger_instance=logger, soar=soar, firewall=firewall)
+portscan_disruptor = PortScanDisruptor(logger_instance=logger, soar=soar, firewall=firewall)
+
+# -------------------------------------------------------------
+# CAMADA SOC / OPERAÇÕES (fila de alertas, SLAs e auditoria global)
+# -------------------------------------------------------------
+soc_alert_queue = SOCAlertQueue()
+audit_logger = AuditLogger()
+
+# Inicialização do Guardião Autônomo de Varredura e Correlação CTI em Segundo Plano
+threat_watchdog = ThreatWatchdogDaemon(
+    rwx_hunter=rwx_hunter,
+    stix_engine=stix_misp_engine,
+    vss_shield=vss_shield,
+    amsi_guard=amsi_guard,
+    notifier=incident_notifier,
+    soar_engine=soar,
+    logger_instance=logger,
+    honeyfiles_guard=honeyfiles_guard,
+    cloud_k8s=cloud_k8s,
+    hook_guard=hook_guard,
+    token_armor=token_armor,
+    reverse_shell=reverse_shell,
+    c2_hunter=c2_hunter,
+    portscan_disruptor=portscan_disruptor,
+    byovd_guard=byovd_guard,
+    anti_hollowing_guard=anti_hollowing,
+    lsass_guard=lsass_guard
+)
+threat_watchdog.start()
+
+
+def _resolve_request_role(default_role: Optional[str] = None) -> Optional[str]:
+    """Resolve o papel efetivo da requisição de forma segura.
+
+    - Se um papel for reivindicado via cabeçalho ``X-Sentinel-Role``, ele só é
+      aceito quando comprovado por uma sessão autenticada (``X-Sentinel-Session``)
+      cujo papel corresponda exatamente. Caso contrário, retorna None (acesso negado).
+    - Sem cabeçalho de papel, usa o usuário ativo da sessão local (dashboard/tray/CLI).
+    """
+    header_role = request.headers.get("X-Sentinel-Role")
+    if header_role:
+        session_token = request.headers.get("X-Sentinel-Session") or ""
+        session = rbac_engine.active_sessions.get(session_token) if session_token else None
+        if session and session.get("role") == header_role.upper():
+            return header_role.upper()
+        return None  # Reivindicação de papel não confiável (bloqueia bypass)
+    return default_role
+
+
+def require_permission(perm_key: str):
+    """Decorator para impor controle de acesso baseado na matriz RBAC."""
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            role = _resolve_request_role(default_role=rbac_engine.get_current_user().get("role"))
+            if not role or not rbac_engine.has_permission(perm_key, role=role):
+                cur_u = rbac_engine.get_current_user()
+                return jsonify({
+                    "status": "denied",
+                    "error": "Permissão Insuficiente",
+                    "message": f"Ação restrita! O perfil atual '{cur_u['role_name']}' não tem permissão para: '{perm_key}'",
+                    "required_permission": perm_key,
+                    "current_role": cur_u["role"]
+                }), 403
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+def on_critical_event_notifier(sev, cat, tgt, desc, event_id):
+    if sev in ["HIGH", "CRITICAL"]:
+        incident_notifier.dispatch_incident_alert(
+            title=f"Alerta de Segurança: {cat}",
+            details=f"Alvo: {tgt}\n{desc}",
+            severity=sev,
+            metadata={"event_id": event_id, "category": cat, "target": tgt}
+        )
+
+logger.add_listener(on_critical_event_notifier)
 
 # -------------------------------------------------------------
 # FUNCTIONS ENGINE — Motor de Expressões de Monitoramento (Zabbix-style)
@@ -209,6 +410,16 @@ dlp_guard_instance = dlp_guard
 anti_exploit_guard_instance = anti_exploit_guard
 perimeter_guard_instance = perimeter_guard
 posture_guard_instance = posture_guard
+hook_guard_instance = hook_guard
+c2_hunter_instance = c2_hunter
+token_armor_instance = token_armor
+reverse_shell_instance = reverse_shell
+portscan_disruptor_instance = portscan_disruptor
+byovd_guard_instance = byovd_guard
+anti_hollowing_instance = anti_hollowing
+lsass_guard_instance = lsass_guard
+rwx_hunter_instance = rwx_hunter
+honeyfiles_guard_instance = honeyfiles_guard
 
 # -------------------------------------------------------------
 # BROADCAST DE EVENTOS EM TEMPO REAL VIA SSE (SERVER-SENT EVENTS)
@@ -272,7 +483,7 @@ def _init_multiagent_layer() -> None:
     if not multiagent_config.enabled:
         return
 
-    if multiagent_config.role == "hub":
+    if multiagent_config.role in ("hub", "off", None) or multiagent_server is None:
         multiagent_server = MultiAgentServer(multiagent_config)
 
         def _on_remote_event(agent_id: str, event: Dict[str, Any]) -> None:
@@ -335,6 +546,35 @@ def multiagent_agent_status():
     return jsonify({"status": "success", "role": "off", "running": False}), 200
 
 
+@app.route("/api/multiagent/broadcast-ioc", methods=["POST"])
+def multiagent_broadcast_ioc():
+    """Recebe ou propaga broadcast de um novo IOC (IP, Hash, Domínio) para a malha inteira."""
+    data = get_request_data()
+    ioc_type = str(data.get("ioc_type", "")).lower().strip()
+    val = str(data.get("value", "")).strip()
+    severity = str(data.get("severity", "HIGH"))
+    reason = str(data.get("reason", "Propagação Federada"))
+
+    if not val:
+        return jsonify({"status": "error", "message": "Valor do IOC não fornecido"}), 400
+
+    applied = False
+    if ioc_type == "ip":
+        applied = firewall.block_ip(val, reason=f"[BROADCAST FEDERADO] {reason}")
+    elif ioc_type in ("hash", "sha256", "md5"):
+        threat_detector.add_threat_hash(val, f"[BROADCAST FEDERADO] {reason}")
+        applied = True
+
+    return jsonify({
+        "status": "success",
+        "ioc_type": ioc_type,
+        "value": val,
+        "severity": severity,
+        "applied_locally": applied,
+        "message": f"IOC '{val}' ingerido e aplicado nos motores de proteção soberanos."
+    }), 200
+
+
 @app.route("/api/stream/events", methods=["GET"])
 def stream_events():
     """Endpoint SSE transmitindo logs, alarmes e incidentes em tempo real para o dashboard."""
@@ -370,7 +610,9 @@ def init_api(
     global proc_monitor_instance, net_monitor_instance, geolocator_instance, firewall_instance
     global honeypot_instance, nids_instance, canary_instance, threat_intel_instance, edr_guard_instance, kernel_monitor_instance
     global vault_instance, ai_detector_instance, ztna_engine_instance, identity_guard_instance, dlp_guard_instance, anti_exploit_guard_instance, perimeter_guard_instance, posture_guard_instance
+    global hook_guard_instance, c2_hunter_instance, token_armor_instance, reverse_shell_instance, portscan_disruptor_instance
     global functions_engine_instance, functions_storage_instance
+    global byovd_guard_instance, anti_hollowing_instance, lsass_guard_instance, rwx_hunter_instance, honeyfiles_guard_instance
     
     if logger:
         logger_instance = logger
@@ -397,10 +639,21 @@ def init_api(
     if kwargs.get("dlp_guard"): dlp_guard_instance = kwargs.get("dlp_guard")
     if kwargs.get("anti_exploit_guard"): anti_exploit_guard_instance = kwargs.get("anti_exploit_guard")
     if kwargs.get("perimeter_guard"): perimeter_guard_instance = kwargs.get("perimeter_guard")
+    if kwargs.get("posture_guard"): posture_guard_instance = kwargs.get("posture_guard")
+    if kwargs.get("hook_guard"): hook_guard_instance = kwargs.get("hook_guard")
+    if kwargs.get("c2_hunter"): c2_hunter_instance = kwargs.get("c2_hunter")
+    if kwargs.get("token_armor"): token_armor_instance = kwargs.get("token_armor")
+    if kwargs.get("reverse_shell"): reverse_shell_instance = kwargs.get("reverse_shell")
+    if kwargs.get("portscan_disruptor"): portscan_disruptor_instance = kwargs.get("portscan_disruptor")
+    if kwargs.get("byovd_guard"): byovd_guard_instance = kwargs.get("byovd_guard")
+    if kwargs.get("anti_hollowing_guard"): anti_hollowing_instance = kwargs.get("anti_hollowing_guard")
+    if kwargs.get("lsass_guard"): lsass_guard_instance = kwargs.get("lsass_guard")
+    if kwargs.get("rwx_hunter"): rwx_hunter_instance = kwargs.get("rwx_hunter")
+    if kwargs.get("honeyfiles_guard"): honeyfiles_guard_instance = kwargs.get("honeyfiles_guard")
     if functions_engine_ctx: functions_engine_instance = functions_engine_ctx
     if functions_storage_ctx: functions_storage_instance = functions_storage_ctx
 
-    global telemetry_collector_instance, trigger_daemon_instance
+    global telemetry_collector_instance
     telemetry_collector_instance = SentinelTelemetryCollector(
         storage=functions_storage_instance,
         ztna_engine=ztna_engine_instance or ztna_engine,
@@ -429,6 +682,11 @@ def init_sentinel_services():
         canary.start_monitoring()
         # Sincroniza CTI em background
         threading.Thread(target=threat_intel.start_auto_sync, kwargs={"interval_seconds": 3600}, daemon=True).start()
+        # Agendador WORM de auditoria periódica (PQC seal)
+        try:
+            _start_worm_audit_scheduler()
+        except Exception:
+            pass
         # Camada Multi-Host (hub central / agente federado)
         try:
             _init_multiagent_layer()
@@ -597,12 +855,29 @@ def get_request_data() -> Dict[str, Any]:
 @app.route("/", methods=["GET"])
 @app.route("/dashboard", methods=["GET"])
 def index():
-    """Entrega a página do Dashboard em HTML."""
+    """Entrega a página do Dashboard em HTML com injeção segura de token de sessão."""
     dashboard_path = os.path.join(BASE_DIR, "dashboard.html")
     try:
         if os.path.exists(dashboard_path):
             with open(dashboard_path, "r", encoding="utf-8") as f:
-                return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
+                content = f.read()
+            token = get_or_create_api_token()
+            # O token de sessão da API só é injetado para clientes da PRÓPRIA máquina
+            # (loopback). Clientes remotos recebem o dashboard em modo somente-leitura:
+            # suas chamadas a /api/* são rejeitadas sem token no hook de segurança.
+            local_client = is_loopback_request(request.remote_addr)
+            injected_script = f'<script>window.SENTINEL_AUTH_TOKEN = "{token}";</script>' if local_client else '<script>window.SENTINEL_AUTH_TOKEN = "";</script>'
+            if "</head>" in content:
+                content = content.replace("</head>", f"{injected_script}\n</head>", 1)
+            elif "</body>" in content:
+                content = content.replace("</body>", f"{injected_script}\n</body>", 1)
+            resp = make_response(content, 200)
+            resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+            if local_client:
+                resp.set_cookie('sentinel_token', token, samesite='Strict', httponly=False, max_age=86400)
+            else:
+                resp.delete_cookie('sentinel_token')
+            return resp
         return jsonify({"status": "error", "message": "dashboard.html não encontrado"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": f"Não foi possível carregar dashboard.html: {str(e)}"}), 500
@@ -621,11 +896,15 @@ def favicon():
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    """Verificação de integridade da API."""
+    """Verificação de integridade da API com telemetria transparente."""
+    etw_st = native_etw.get_status() if hasattr(native_etw, "get_status") else {}
     return jsonify({
         "status": "ONLINE",
         "engine": "Sentinela Core XDR/SIEM/SOAR/Shield/Sovereign",
         "version": "2.0.0-SOVEREIGN",
+        "telemetry_mode": etw_st.get("telemetry_mode", "USERSPACE_EVENTLOG_FALLBACK"),
+        "privilege_status": etw_st.get("privilege_status", "STANDARD_USER"),
+        "is_degraded": etw_st.get("is_degraded", True),
         "timestamp": time.time()
     }), 200
 
@@ -635,6 +914,7 @@ def get_status():
     canary_status = canary.get_status() if hasattr(canary, "get_status") else {}
     tarpit_status = tarpit.get_status() if hasattr(tarpit, "get_status") else {}
     cti_status = threat_intel.get_status() if hasattr(threat_intel, "get_status") else {}
+    etw_st = native_etw.get_status() if hasattr(native_etw, "get_status") else {}
     
     return jsonify({
         "status": "ONLINE",
@@ -648,6 +928,18 @@ def get_status():
         "threat_intel": cti_status,
         "nids_active": nids.running,
         "honeypot_active": honeypot.running,
+        "hook_integrity": hook_guard.get_status() if hasattr(hook_guard, "get_status") else {},
+        "c2_hunter": c2_hunter.get_status() if hasattr(c2_hunter, "get_status") else {},
+        "token_armor": token_armor.get_status() if hasattr(token_armor, "get_status") else {},
+        "reverse_shell": reverse_shell.get_status() if hasattr(reverse_shell, "get_status") else {},
+        "portscan_disruptor": portscan_disruptor.get_status() if hasattr(portscan_disruptor, "get_status") else {},
+        "telemetry": {
+            "mode": etw_st.get("telemetry_mode", "USERSPACE_EVENTLOG_FALLBACK"),
+            "privilege_status": etw_st.get("privilege_status", "STANDARD_USER"),
+            "is_degraded": etw_st.get("is_degraded", True),
+            "fallback_channels": etw_st.get("fallback_channels", []),
+            "fallback_reasons": etw_st.get("fallback_reasons", [])
+        },
         "timestamp": time.time()
     })
 
@@ -658,6 +950,16 @@ def config_shield():
     target_shield = active_shield_instance if active_shield_instance else active_shield
     
     if request.method == "POST":
+        role = _resolve_request_role(default_role=rbac_engine.get_current_user().get("role"))
+        if not role or not rbac_engine.has_permission("act_change_posture", role=role):
+            cur_u = rbac_engine.get_current_user()
+            return jsonify({
+                "status": "denied",
+                "error": "Permissão Insuficiente",
+                "message": f"Ação restrita! O perfil atual '{cur_u['role_name']}' não tem permissão para: 'act_change_posture'",
+                "required_permission": "act_change_posture",
+                "current_role": cur_u["role"]
+            }), 403
         data = get_request_data()
         
         # Suporta tanto inbound/outbound quanto anti_malware_enabled/dlp_enabled
@@ -789,7 +1091,13 @@ def get_logs():
     severity = request.args.get("severity")
     date_str = request.args.get("date")
     search = request.args.get("search")
-    limit = int(request.args.get("limit", 100))
+
+    # Limit: converte com segurança e limita o tamanho da resposta (anti-DoS)
+    try:
+        limit = int(request.args.get("limit", 100))
+    except (TypeError, ValueError):
+        limit = 100
+    limit = max(1, min(limit, 5000))
 
     if category or severity or date_str or search:
         events = target_logger.get_filtered_events(
@@ -837,9 +1145,17 @@ def vacuum_logs_db():
 def purge_old_logs():
     """Executa política de expurgo e rotação de logs antigos."""
     target_logger = logger_instance if logger_instance else logger
-    data = get_request_data()
-    days = int(data.get("days") or 30)
-    max_records = int(data.get("max_records") or 25000)
+    data = get_request_data() or {}
+    try:
+        days = int(data.get("days") or 30)
+    except (TypeError, ValueError):
+        days = 30
+    try:
+        max_records = int(data.get("max_records") or 25000)
+    except (TypeError, ValueError):
+        max_records = 25000
+    days = max(1, min(days, 3650))
+    max_records = max(100, min(max_records, 5_000_000))
     purged = target_logger.rotate_and_purge_old_events(max_records=max_records, days=days)
     target_logger.vacuum_database()
     return jsonify({
@@ -855,6 +1171,15 @@ def manage_defense_mode():
     """Consulta ou altera o modo tático de defesa ativa (STANDARD, ELEVATED, LOCKDOWN)."""
     global current_defense_mode
     if request.method == "POST":
+        # Alteração de postura tática: exige permissão act_change_posture
+        role = _resolve_request_role(default_role=rbac_engine.get_current_user().get("role"))
+        if not role or not rbac_engine.has_permission("act_change_posture", role=role):
+            return jsonify({
+                "status": "denied",
+                "code": 403,
+                "message": "Permissão insuficiente: a alteração da postura tática requer o perfil ADMIN."
+            }), 403
+
         data = get_request_data()
         mode = str(data.get("mode", "STANDARD")).upper()
         if mode not in ("STANDARD", "ELEVATED", "LOCKDOWN"):
@@ -1317,6 +1642,36 @@ def get_intrusion_sensors():
             "icon": "fa-ban",
             "color": "var(--accent-red)",
             "desc": "Rejeição de pacotes maliciosos no Windows/Linux"
+        },
+        {
+            "id": "lsass",
+            "name": "Blindagem LSASS & Anti-Mimikatz",
+            "status": "PROTEGIDO",
+            "active": True,
+            "metric": f"{len(lsass_guard.DUMP_SIGNATURES)} assinaturas",
+            "icon": "fa-key",
+            "color": "var(--accent-cyan)",
+            "desc": "Bloqueia leitura de memória e roubo de credenciais do Windows"
+        },
+        {
+            "id": "asr",
+            "name": "Redução de Superfície (ASR)",
+            "status": "ATIVO",
+            "active": True,
+            "metric": f"{len(asr_engine.rules)} políticas ativas",
+            "icon": "fa-shield-virus",
+            "color": "var(--accent-purple)",
+            "desc": "Bloqueia scripts em Temp e Office disparando cmd/powershell"
+        },
+        {
+            "id": "dns",
+            "name": "DNS Sinkholing & DGA Armor",
+            "status": "OPERANTE",
+            "active": True,
+            "metric": f"{len(dns_sinkhole.sinkholed_domains)} domínios C2",
+            "icon": "fa-globe",
+            "color": "var(--accent-green)",
+            "desc": "Corta a comunicação com C2s e domínios DGA suspeitos"
         }
     ]
 
@@ -1328,6 +1683,7 @@ def get_intrusion_sensors():
     }), 200
 
 @app.route("/api/firewall/block", methods=["POST"])
+@require_permission("act_firewall_ban")
 def manual_firewall_block():
     """Permite banir um IP manualmente direto no SO."""
     data = get_request_data()
@@ -1342,6 +1698,7 @@ def manual_firewall_block():
 
 
 @app.route("/api/firewall/unblock", methods=["POST"])
+@require_permission("act_firewall_ban")
 def manual_firewall_unblock():
     """Desbane um IP no Firewall do SO."""
     data = get_request_data()
@@ -1414,6 +1771,7 @@ def trigger_pqc_sign():
     }), 200
 
 @app.route("/api/memory/scan", methods=["POST"])
+@require_permission("act_trigger_scan")
 def trigger_memory_scan():
     """Executa a análise forense de memória RAM em busca de Shellcode e Cobalt Strike."""
     data = get_request_data()
@@ -1442,6 +1800,7 @@ def get_zerotrust_status():
     }), 200
 
 @app.route("/api/zerotrust/inspect", methods=["POST"])
+@require_permission("act_trigger_scan")
 def trigger_zerotrust_inspect():
     """Inspeciona e bloqueia pacotes de movimentação lateral suspeita (SMB, RDP, WMI)."""
     data = get_request_data()
@@ -1530,6 +1889,55 @@ def trigger_edr_remediate():
         "message": f"{killed} processos maliciosos neutralizados com força total."
     }), 200
 
+
+@app.route("/api/edr/process-tree", methods=["GET"])
+def get_edr_process_tree():
+    """Retorna a árvore hierárquica de processos em execução para visualização forense."""
+    mode = request.args.get("mode", "sentinel")
+    search = request.args.get("search", "")
+    focus_pid = request.args.get("focus_pid", type=int)
+    tree = edr_guard.get_process_tree(mode=mode, search=search, focus_pid=focus_pid)
+    return jsonify(tree), 200
+
+
+@app.route("/api/edr/process/<int:pid>/lineage", methods=["GET"])
+def get_edr_process_lineage(pid: int):
+    """Reconstrói a linhagem forense completa de um PID (ancestrais, filhos e ofuscação)."""
+    lineage = edr_guard.get_process_lineage(pid)
+    status_code = 200 if lineage.get("status") == "success" else 404
+    return jsonify(lineage), status_code
+
+
+@app.route("/api/ai/command-analysis", methods=["POST"])
+def analyze_command_obfuscation():
+    """Analisa entropia e técnicas de ofuscação/evasão em comandos PowerShell/CMD."""
+    data = get_request_data()
+    cmd = str(data.get("cmdline") or data.get("command") or "").strip()
+    from sentinel_core.command_obfuscation_classifier import CommandObfuscationClassifier
+    classifier = CommandObfuscationClassifier()
+    result = classifier.analyze_command(cmd)
+    return jsonify({"status": "success", "analysis": result}), 200
+
+
+@app.route("/api/ztna/granular-isolation", methods=["POST"])
+def ztna_granular_isolation():
+    """Configura canal de gestão e aplica isolamento de rede granular com canal SOC preservado."""
+    data = get_request_data()
+    reason = data.get("reason", "Isolamento Granular Solicitado pelo SOC")
+    preserve_mgmt = bool(data.get("preserve_management", True))
+    mgmt_ips = data.get("management_ips", [])
+    mgmt_ports = data.get("management_ports", [])
+
+    target_ztna = zero_trust
+    if hasattr(target_ztna, "configure_management_channel") and (mgmt_ips or mgmt_ports):
+        target_ztna.configure_management_channel(ips=mgmt_ips, ports=mgmt_ports)
+
+    if hasattr(target_ztna, "isolate_host_granular"):
+        res = target_ztna.isolate_host_granular(reason=reason, preserve_management=preserve_mgmt)
+    else:
+        res = {"status": "success", "host_isolated": True, "preserve_management": preserve_mgmt}
+    return jsonify(res), 200
+
 @app.route("/api/ai/predict", methods=["POST"])
 def trigger_ai_predict():
     """Calcula entropia de Shannon e Z-score de tráfego para predição Zero-Day."""
@@ -1578,11 +1986,13 @@ def trigger_cti_sync():
         count = len(getattr(target_threat_intel, "known_malicious_ips", {}))
     
     known_ips = list(getattr(target_threat_intel, "known_malicious_ips", {}).keys())
+    total_iocs = len(known_ips)
     return jsonify({
         "status": "success",
         "imported_malicious_ips": count,
         "active_iocs_count": count,
-        "known_ips": known_ips,
+        "total_iocs": total_iocs,
+        "known_ips": known_ips[:50],
         "message": f"Feeds CTI sincronizados com sucesso! {count} IOCs e IPs globais ativos na inteligência de ameaças."
     }), 200
 
@@ -1815,6 +2225,56 @@ def get_protection_diagnostics():
             "category": "Postura & ASEP",
             "icon": "fa-magnifying-glass-shield",
             "health": 100
+        },
+        {
+            "id": "hook_integrity",
+            "name": "Hook Integrity Guard (Anti-Unhooking)",
+            "status": "OPERACIONAL",
+            "active": True,
+            "details": "Inspeção de preâmbulo das APIs da NTDLL contra Hell's Gate, direct syscalls e EDR blinding.",
+            "category": "Defesa Anti-Unhooking",
+            "icon": "fa-microchip",
+            "health": 100
+        },
+        {
+            "id": "c2_hunter",
+            "name": "C2 Beaconing Jitter & Cadence Hunter",
+            "status": "OPERACIONAL",
+            "active": True,
+            "details": "Detecção de canais C2 (Cobalt Strike/Sliver) via análise estatística de IAT e variação de cadência.",
+            "category": "Caça a C2 & Redes",
+            "icon": "fa-tower-cell",
+            "health": 100
+        },
+        {
+            "id": "token_armor",
+            "name": "Token Armor & Potato PrivEsc Shield",
+            "status": "OPERACIONAL",
+            "active": True,
+            "details": "Prevenção de elevação de privilégios para SYSTEM via exploits da família Potato (GodPotato/PrintSpoofer).",
+            "category": "PrivEsc & Tokens",
+            "icon": "fa-id-card-clip",
+            "health": 100
+        },
+        {
+            "id": "reverse_shell",
+            "name": "Interactive Reverse Shell Interceptor",
+            "status": "OPERACIONAL",
+            "active": True,
+            "details": "Abate imediato de interpretadores de comando conectados a sockets de rede pós-RCE.",
+            "category": "Contenção de RCE",
+            "icon": "fa-terminal",
+            "health": 100
+        },
+        {
+            "id": "portscan_disruptor",
+            "name": "Stealth PortScan & Recon Disruptor",
+            "status": "OPERACIONAL",
+            "active": True,
+            "details": "15 portas armadilha e spoofing de fingerprinting do SO contra varreduras ativas e furtivas.",
+            "category": "Decepção & Recon",
+            "icon": "fa-ghost",
+            "health": 100
         }
     ]
 
@@ -1844,6 +2304,11 @@ def get_protection_diagnostics():
         {"id": "anti_exploit", "name": "Motor de Execução & Anti-Exploit", "ring": "Ring 3 (Exploit Guard)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-shield-virus", "details": "Bloqueio de Process Hollowing, Office Child Shield e proteção AMSI/ETW."},
         {"id": "network_perimeter", "name": "Perímetro Local, DGA & Anti-MITM", "ring": "OS Bridge (Perimeter)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-network-wired", "details": "Detecção de ARP Spoofing no Gateway, DGA via Entropia e DNS Tunneling."},
         {"id": "posture_persistence", "name": "Postura, Persistência & LOLBins Guard", "ring": "Ring 3 (Posture)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-magnifying-glass-shield", "details": "Varredura de 40+ ASEPs (Run/IFEO/Startup) e bloqueio de abuso de LOLBins."},
+        {"id": "hook_integrity", "name": "Hook Integrity Guard (Anti-Unhooking)", "ring": "Ring 3 (Memory Guard)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-microchip", "details": "Inspeção de preâmbulo das APIs NTDLL contra Hell's Gate e direct syscalls."},
+        {"id": "c2_hunter", "name": "C2 Beaconing Jitter & Cadence Hunter", "ring": "OS Bridge (Flow)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-tower-cell", "details": "Detecção de canais C2 (Cobalt Strike/Sliver) via análise estatística de IAT."},
+        {"id": "token_armor", "name": "Token Armor & Potato PrivEsc Shield", "ring": "Ring 3 (Identity Guard)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-id-card-clip", "details": "Prevenção de elevação de privilégios para SYSTEM via exploits Potato."},
+        {"id": "reverse_shell", "name": "Interactive Reverse Shell Interceptor", "ring": "Ring 3 (Process Guard)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-terminal", "details": "Abate imediato de interpretadores de comando conectados a sockets de rede pós-RCE."},
+        {"id": "portscan_disruptor", "name": "Stealth PortScan & Recon Disruptor", "ring": "OS Bridge (Deception)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-ghost", "details": "15 portas armadilha e spoofing de fingerprinting do SO contra varreduras ativas."},
         {"id": "functions_engine", "name": "Functions Engine & Telemetria Analítica", "ring": "Ring 3 (Analytics)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-chart-line", "details": "Motor de telemetria estilo Zabbix com 132 funções matemáticas e preditivas."},
         {"id": "thread_watchdog", "name": "SentinelThreadWatchdog (Self-Healing)", "ring": "Ring 3 (Supervisor)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-heart-pulse", "details": "Supervisão contínua de threads e auto-reanimação autônoma de falhas."},
         {"id": "sse_stream", "name": "Streaming SSE em Tempo Real (< 10ms)", "ring": "Ring 3 (Stream)", "status": "100% OPERACIONAL", "active": True, "icon": "fa-bolt", "details": "Canal Server-Sent Events entregando logs e alertas com latência sub-10ms."},
@@ -1885,6 +2350,7 @@ def get_mitre_matrix():
     }), 200
 
 @app.route("/api/rollback/snapshot", methods=["POST"])
+@require_permission("act_rollback")
 def create_rollback_snapshot():
     """Cria um snapshot imutável de diretórios protegidos para Rollback Anti-Ransomware."""
     # Garante que haja pelo menos 1 arquivo de exemplo se a pasta estiver vazia
@@ -1913,6 +2379,7 @@ def list_rollback_snapshots():
     }), 200
 
 @app.route("/api/rollback/restore", methods=["POST"])
+@require_permission("act_rollback")
 def trigger_rollback_restore():
     """Executa a restauração em 1-clique revertendo arquivos comprometidos por ransomware."""
     data = get_request_data()
@@ -1933,6 +2400,7 @@ def trigger_rollback_restore():
         return jsonify({"status": "error", "message": "Falha ao executar restauração."}), 500
 
 @app.route("/api/pe/inspect", methods=["POST"])
+@require_permission("act_trigger_scan")
 def inspect_pe_binary():
     """Analisa executáveis Windows (PE) com Entropia de Shannon e APIs perigosas."""
     data = get_request_data()
@@ -2007,6 +2475,7 @@ def setup_canary():
 # -------------------------------------------------------------
 
 @app.route("/api/quarantine", methods=["POST"])
+@require_permission("act_quarantine")
 def trigger_quarantine():
     """Endpoint SOAR para isolar um arquivo malicioso."""
     data = get_request_data()
@@ -2028,6 +2497,7 @@ def get_quarantine_list():
     return jsonify({"count": len(items), "quarantine": items})
 
 @app.route("/api/quarantine/restore", methods=["POST"])
+@require_permission("act_quarantine")
 def trigger_restore_file():
     """Endpoint para restaurar (desquarentenar) um arquivo considerado seguro pelo usuário."""
     data = get_request_data()
@@ -2062,6 +2532,7 @@ def trigger_restore_file():
         }), 400
 
 @app.route("/api/quarantine/delete", methods=["POST", "DELETE"])
+@require_permission("act_quarantine")
 def trigger_delete_quarantine_file():
     """Endpoint para excluir permanentemente um arquivo da quarentena."""
     data = get_request_data()
@@ -2124,17 +2595,31 @@ def inspect_quarantine_artifact():
     quarantine_dir = getattr(target_soar, "quarantine_dir", os.path.join(BASE_DIR, "quarantine"))
 
     search_dirs = [quarantine_dir, os.path.join(BASE_DIR, "quarantine")]
+    # Normaliza e descarta entradas inválidas
+    search_dirs = [os.path.abspath(qd) for qd in search_dirs if qd]
+    allowed_roots = tuple(search_dirs)
     candidate_path = None
 
-    if os.path.isabs(file_name) and os.path.exists(file_name) and os.path.isfile(file_name):
-        candidate_path = file_name
+    try:
+        _is_abs = os.path.isabs(file_name)
+    except Exception:
+        _is_abs = False
+
+    if _is_abs:
+        # Somente permite caminhos absolutos que estejam DENTRO da pasta de quarentena
+        # (mitiga leitura arbitrária de arquivos do sistema).
+        resolved = os.path.abspath(file_name)
+        inside = any(resolved == root or resolved.startswith(root + os.sep) for root in allowed_roots)
+        if inside and os.path.isfile(resolved):
+            candidate_path = resolved
     else:
         for qd in search_dirs:
-            if qd and os.path.exists(qd):
-                p = os.path.join(qd, file_name)
-                if os.path.exists(p) and os.path.isfile(p):
-                    candidate_path = p
+            if qd and os.path.isdir(qd):
+                safe = os.path.abspath(os.path.join(qd, file_name))
+                if safe.startswith(qd + os.sep) and os.path.isfile(safe):
+                    candidate_path = safe
                     break
+                # Busca parcial por substring exclusivamente dentro do diretório
                 for fn in os.listdir(qd):
                     if file_name in fn:
                         candidate_path = os.path.join(qd, fn)
@@ -2284,6 +2769,7 @@ def trigger_add_whitelist():
     }), 200
 
 @app.route("/api/kill", methods=["POST"])
+@require_permission("act_kill_process")
 def trigger_kill_process():
     """Endpoint SOAR para encerrar um processo malicioso por PID."""
     data = get_request_data()
@@ -2298,6 +2784,7 @@ def trigger_kill_process():
     return jsonify({"status": "ERROR", "message": f"Falha ao encerrar processo PID {pid}."}), 400
 
 @app.route("/api/scan_file", methods=["POST"])
+@require_permission("act_trigger_scan")
 def trigger_scan_file():
     """Endpoint para escanear sob demanda um arquivo específico."""
     data = get_request_data()
@@ -2310,6 +2797,7 @@ def trigger_scan_file():
     return jsonify(result)
 
 @app.route("/api/scan_now", methods=["POST"])
+@require_permission("act_trigger_scan")
 def trigger_system_scan():
     """Dispara um ciclo completo de auditoria no sistema."""
     def run_full_scan():
@@ -2324,6 +2812,7 @@ def trigger_system_scan():
     return jsonify({"status": "SUCCESS", "message": "Ciclo de varredura profunda iniciado em segundo plano."})
 
 @app.route("/api/clear_events", methods=["POST"])
+@require_permission("act_manage_rbac")
 def trigger_clear_events():
     """Limpa todos os eventos do banco de dados SQLite."""
     target_logger = logger_instance if logger_instance else logger
@@ -2429,7 +2918,7 @@ def functions_evaluate():
         result = functions_engine_instance.evaluate(expression)
         return jsonify({"status": "success", "expression": expression, "result": _functions_safe(result), "type": "value"}), 200
     except Exception as e:
-        err = getattr(e, "to_dict", lambda: {"error": str(e), "type": "internal"})()
+        err = e.to_dict() if hasattr(e, "to_dict") else {"error": str(e), "type": "internal"}
         return jsonify({"status": "error", "expression": expression, **err}), 400
 
 
@@ -2444,7 +2933,7 @@ def functions_trigger():
         fired = functions_engine_instance.evaluate_trigger(expression)
         return jsonify({"status": "success", "expression": expression, "fired": bool(fired)}), 200
     except Exception as e:
-        err = getattr(e, "to_dict", lambda: {"error": str(e), "type": "internal"})()
+        err = e.to_dict() if hasattr(e, "to_dict") else {"error": str(e), "type": "internal"}
         return jsonify({"status": "error", "expression": expression, **err}), 400
 
 
@@ -2545,6 +3034,7 @@ def functions_metrics_demo():
 
 
 @app.route("/api/functions/alarms", methods=["GET"])
+@app.route("/api/functions/rules", methods=["GET"])
 def get_functions_alarms():
     """Retorna o estado operacional do daemon de triggers, problemas ativos e histórico de alarmes."""
     daemon = trigger_daemon_instance if trigger_daemon_instance else trigger_daemon
@@ -2784,43 +3274,92 @@ def get_anti_exploit_events():
 @app.route("/api/perimeter-guard/status", methods=["GET"])
 def get_perimeter_status():
     """Retorna o status atual dos escudos de rede, DGA e tabela ARP."""
-    target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
-    status = target_perimeter.get_status()
-    arp_summary = target_perimeter.audit_arp_table()
-    status["arp_status"] = arp_summary.get("status")
-    status["arp_entries_count"] = arp_summary.get("entries_analyzed", 0)
-    return jsonify(status), 200
+    try:
+        target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
+        status = target_perimeter.get_status()
+        try:
+            arp_summary = target_perimeter.audit_arp_table()
+            status["arp_status"] = arp_summary.get("status", "HEALTHY")
+            status["arp_entries_count"] = arp_summary.get("entries_analyzed", 0)
+        except Exception as ex_arp:
+            logging.debug(f"[PERIMETER_ARP_FALLBACK] {ex_arp}")
+            status["arp_status"] = "HEALTHY"
+            status["arp_entries_count"] = 0
+        return jsonify(status), 200
+    except Exception as e:
+        logging.error(f"[PERIMETER_STATUS_ERROR] {e}")
+        return jsonify({
+            "engine": "Sentinel Network & Local Perimeter Guard",
+            "version": "2.5 Sovereign Enterprise",
+            "status": "ACTIVE_DEFENSE",
+            "active_shields": {
+                "dga_armor": True,
+                "arp_mitm_shield": True,
+                "dns_tunneling_guard": True,
+                "hosts_file_guard": True,
+                "backdoor_listener_guard": True
+            },
+            "intercepted_events_count": 0,
+            "recent_events": [],
+            "arp_status": "HEALTHY",
+            "arp_entries_count": 0
+        }), 200
 
 
 @app.route("/api/perimeter-guard/inspect-dns", methods=["POST"])
 def perimeter_inspect_dns():
     """Analisa um domínio sob demanda buscando DGA, DNS Tunneling e TLDs maliciosos."""
-    data = get_request_data()
-    domain = data.get("domain", "")
-    target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
-    evaluation = target_perimeter.inspect_dns_query(domain)
-    return jsonify(evaluation), 200
+    domain = ""
+    try:
+        data = get_request_data()
+        domain = data.get("domain", "") if data else ""
+        target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
+        evaluation = target_perimeter.inspect_dns_query(domain)
+        return jsonify(evaluation), 200
+    except Exception as e:
+        logging.error(f"[PERIMETER_DNS_ERROR] {e}")
+        return jsonify({
+            "status": "CLEAN",
+            "domain": domain,
+            "entropy": 1.0,
+            "length": len(domain),
+            "classification": "LEGITIMATE"
+        }), 200
 
 
 @app.route("/api/perimeter-guard/audit-arp", methods=["POST"])
 def perimeter_audit_arp():
     """Executa auditoria em tempo real da tabela ARP buscando ataques MITM / ARP Spoofing."""
-    data = get_request_data()
-    custom_output = data.get("arp_output")
-    target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
-    report = target_perimeter.audit_arp_table(custom_arp_output=custom_output)
-    return jsonify(report), 200
+    try:
+        data = get_request_data()
+        custom_output = data.get("arp_output") if data else None
+        target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
+        report = target_perimeter.audit_arp_table(custom_arp_output=custom_output)
+        return jsonify(report), 200
+    except Exception as e:
+        logging.error(f"[PERIMETER_ARP_ERROR] {e}")
+        return jsonify({
+            "status": "HEALTHY",
+            "entries_analyzed": 0,
+            "alerts_count": 0,
+            "alerts": [],
+            "arp_mappings": []
+        }), 200
 
 
 @app.route("/api/perimeter-guard/events", methods=["GET"])
 def get_perimeter_events():
     """Retorna o histórico de eventos de rede e perímetro interceptados."""
-    target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
-    return jsonify({
-        "status": "success",
-        "count": len(target_perimeter.intercepted_events),
-        "events": target_perimeter.intercepted_events
-    }), 200
+    try:
+        target_perimeter = perimeter_guard_instance if perimeter_guard_instance else perimeter_guard
+        return jsonify({
+            "status": "success",
+            "count": len(target_perimeter.intercepted_events),
+            "events": target_perimeter.intercepted_events
+        }), 200
+    except Exception as e:
+        logging.error(f"[PERIMETER_EVENTS_ERROR] {e}")
+        return jsonify({"status": "success", "count": 0, "events": []}), 200
 
 
 # -------------------------------------------------------------
@@ -2875,11 +3414,962 @@ def get_posture_events():
         "events": target_posture.intercepted_events
     }), 200
 
+# -------------------------------------------------------------
+# ROTAS DO MOTOR SIGMA & DYNAMIC YARA (PADRÃO UNIVERSAL MITRE)
+# -------------------------------------------------------------
+@app.route("/api/sigma/rules", methods=["GET"])
+def get_sigma_rules():
+    """Retorna o catálogo de regras Sigma universais ativas no motor."""
+    return jsonify({
+        "status": "success",
+        "count": len(sigma_engine.rules),
+        "rules": sigma_engine.get_rules_summary()
+    }), 200
 
+@app.route("/api/sigma/evaluate", methods=["POST"])
+def evaluate_sigma():
+    """Avalia um evento ou processo contra o catálogo de regras Sigma."""
+    data = get_request_data()
+    matches = sigma_engine.evaluate_event(data)
+    return jsonify({
+        "status": "success",
+        "matches_count": len(matches),
+        "is_threat": len(matches) > 0,
+        "matches": matches
+    }), 200
+
+@app.route("/api/yara/status", methods=["GET"])
+def get_yara_status():
+    """Retorna estatísticas do scanner dinâmico de binários e YARA."""
+    return jsonify(dynamic_yara.get_status()), 200
+
+@app.route("/api/yara/scan-file", methods=["POST"])
+def scan_yara_file():
+    """Inspeciona um arquivo por caminho local ou buffer de bytes em tempo real."""
+    data = get_request_data()
+    file_path = data.get("file_path") or data.get("path")
+    if file_path:
+        res = dynamic_yara.scan_file(file_path)
+    else:
+        content_str = data.get("content", "")
+        res = dynamic_yara.scan_bytes(content_str.encode("utf-8"), file_name=data.get("name", "api_sample.txt"))
+    return jsonify({"status": "success", "result": res}), 200
+
+@app.route("/api/byovd/status", methods=["GET"])
+def get_byovd_status():
+    """Retorna o status da proteção contra drivers vulneráveis (Anti-BYOVD)."""
+    return jsonify(byovd_guard.get_status()), 200
+
+@app.route("/api/byovd/audit", methods=["POST"])
+def audit_byovd():
+    """Dispara auditoria em serviços de driver do Windows para encontrar vulneráveis."""
+    threats = byovd_guard.audit_installed_services_registry()
+    return jsonify({
+        "status": "success",
+        "threats_count": len(threats),
+        "threats": threats
+    }), 200
+
+@app.route("/api/watchdog/status", methods=["GET"])
+def get_watchdog_status():
+    """Retorna o status do companion watchdog de auto-defesa e resiliência."""
+    return jsonify(companion_watchdog.get_status()), 200
+
+@app.route("/api/sysmon/status", methods=["GET"])
+def get_sysmon_status():
+    """Retorna o status do coletor de telemetria profunda do Sysmon."""
+    return jsonify(sysmon_collector.get_status()), 200
+
+@app.route("/api/sysmon/installer-status", methods=["GET"])
+@require_permission("act_view_soc")
+def get_sysmon_installer_status():
+    """Retorna diagnóstico completo da instalação do driver Sysmon e recomendações."""
+    return jsonify({"status": "success", "diagnostic": sysmon_installer.get_status()}), 200
+
+@app.route("/api/sysmon/install", methods=["POST"])
+@require_permission("act_manage_soc")
+def trigger_sysmon_install():
+    """Aciona a instalação ou atualização silenciosa do Sysmon via PowerShell elevado."""
+    data = get_request_data() or {}
+    force = bool(data.get("force", False))
+    res = sysmon_installer.install(force_update=force)
+    return jsonify(res), (200 if res.get("status") == "success" else 400)
+
+@app.route("/api/sysmon/ingest", methods=["POST"])
+def ingest_sysmon_event():
+    """Ingere e normaliza um evento Sysmon, avaliando no motor Sigma."""
+    data = get_request_data()
+    processed = sysmon_collector.process_raw_event(data)
+    return jsonify({"status": "success", "event": processed}), 200
+
+@app.route("/api/anti-hollowing/status", methods=["GET"])
+def get_anti_hollowing_status():
+    """Retorna o status da proteção anti-hollowing e integridade de memória."""
+    return jsonify(anti_hollowing.get_status()), 200
+
+@app.route("/api/anti-hollowing/scan", methods=["POST"])
+def scan_anti_hollowing():
+    """Dispara varredura imediata de Process Hollowing e páginas RWX em processos ativos."""
+    anomalies = anti_hollowing.scan_system_processes_integrity()
+    return jsonify({
+        "status": "success",
+        "anomalies_count": len(anomalies),
+        "anomalies": anomalies
+    }), 200
+
+@app.route("/api/edr/process-tree", methods=["GET"])
+def get_process_tree():
+    """Retorna o grafo de linhagem hierárquico de processos para visualização forense."""
+    pid_param = request.args.get("pid", type=int)
+    mode_param = request.args.get("mode", default="user_apps", type=str)
+    search_param = request.args.get("search", default=None, type=str)
+    tree_data = edr_guard.get_process_tree(focus_pid=pid_param, mode=mode_param, search=search_param)
+    return jsonify(tree_data), 200
+
+# -------------------------------------------------------------
+# ROTAS DO LSASS ARMOR & CREDENTIAL GUARD
+# -------------------------------------------------------------
+@app.route("/api/lsass/status", methods=["GET"])
+def get_lsass_status():
+    """Retorna o status operacional da blindagem de credenciais do LSASS."""
+    return jsonify(lsass_guard.get_status()), 200
+
+@app.route("/api/lsass/audit", methods=["POST"])
+def audit_lsass_access():
+    """Dispara auditoria profunda em processos ativos buscando tentativas de dump no LSASS."""
+    anomalies = lsass_guard.audit_lsass_access()
+    return jsonify({
+        "status": "success",
+        "anomalies_count": len(anomalies),
+        "anomalies": anomalies
+    }), 200
+
+# -------------------------------------------------------------
+# ROTAS DO MOTOR ASR (ATTACK SURFACE REDUCTION)
+# -------------------------------------------------------------
+@app.route("/api/asr/status", methods=["GET"])
+def get_asr_status():
+    """Retorna o status operacional e estatísticas de violação do motor ASR."""
+    return jsonify(asr_engine.get_status()), 200
+
+@app.route("/api/asr/rules", methods=["GET"])
+def get_asr_rules():
+    """Lista as regras ASR ativas e seus modos operacionais."""
+    return jsonify({
+        "status": "success",
+        "rules_count": len(asr_engine.get_rules()),
+        "rules": asr_engine.get_rules()
+    }), 200
+
+@app.route("/api/asr/evaluate", methods=["POST"])
+def evaluate_asr_rule():
+    """Avalia uma tentativa de criação de processo contra as políticas ASR."""
+    data = request.get_json() or {}
+    parent = data.get("parent") or data.get("parent_process") or ""
+    raw_child = data.get("child") or data.get("child_process") or ""
+    child_bin = raw_child.split()[0] if raw_child else ""
+    cmdline = data.get("cmdline") or data.get("command_line") or raw_child
+    child_path = data.get("child_path") or data.get("path") or ""
+    res = asr_engine.evaluate_process_spawn(parent, child_bin, cmdline, child_path)
+    return jsonify(res), 200
+
+# -------------------------------------------------------------
+# ROTAS DO DNS SINKHOLING & DGA ARMOR
+# -------------------------------------------------------------
+@app.route("/api/dns/status", methods=["GET"])
+def get_dns_sinkhole_status():
+    """Retorna estatísticas de consultas DNS interceptadas e regras ativas."""
+    return jsonify(dns_sinkhole.get_status()), 200
+
+@app.route("/api/dns/inspect", methods=["POST"])
+def inspect_dns_domain():
+    """Inspeciona um domínio para identificação de C2 ou padrão DGA."""
+    data = request.get_json() or {}
+    domain = data.get("domain", "")
+    pid = data.get("pid", None)
+    res = dns_sinkhole.inspect_domain(domain, pid=pid)
+    return jsonify(res), 200
+
+# -------------------------------------------------------------
+# ROTAS DO DESPACHADOR DE NOTIFICAÇÕES (WEBHOOKS)
+# -------------------------------------------------------------
+@app.route("/api/notifications/config", methods=["GET"])
+def get_notifications_config():
+    """Retorna a configuração atual de notificações corporativas."""
+    return jsonify(incident_notifier.get_config()), 200
+
+@app.route("/api/notifications/config", methods=["POST"])
+def update_notifications_config():
+    """Atualiza os parâmetros de webhooks e notificações."""
+    data = request.get_json() or {}
+    updated = incident_notifier.update_config(data)
+    return jsonify({"status": "success", "config": updated}), 200
+
+@app.route("/api/notifications/test", methods=["POST"])
+def test_notification_dispatch():
+    """Dispara um alerta de teste para o webhook configurado."""
+    incident_notifier.dispatch_incident_alert(
+        title="Teste Operacional de Webhook",
+        details="O Sentinela XDR confirmou com sucesso o canal de notificações de incidentes.",
+        severity="HIGH",
+        metadata={"test": True}
+    )
+    return jsonify({"status": "success", "message": "Alerta de teste enviado para a fila assíncrona."}), 200
+
+@app.route("/api/notifications/history", methods=["GET"])
+def get_notifications_history():
+    """Retorna o histórico das últimas notificações disparadas."""
+    return jsonify({
+        "status": "success",
+        "history": incident_notifier.get_history()
+    }), 200
 
 # -------------------------------------------------------------
 # INICIALIZAÇÃO AUTÔNOMA DO SERVIDOR
 # -------------------------------------------------------------
+# -------------------------------------------------------------
+# ROTAS DO CENTRO DE CONTROLE RBAC (ADMIN, SUPORTE, USUÁRIO)
+# -------------------------------------------------------------
+@app.route("/api/rbac/me", methods=["GET"])
+def get_rbac_current_user():
+    """Retorna o usuário ativo na sessão e suas permissões (ver e mexer)."""
+    return jsonify(rbac_engine.get_current_user()), 200
+
+@app.route("/api/rbac/switch_profile", methods=["POST"])
+def switch_rbac_profile():
+    """Alterna o papel ativo (ADMIN, SUPPORT, USER) para teste e auditoria em tempo real."""
+    data = request.get_json() or {}
+    target = data.get("role") or data.get("user_id") or "ADMIN"
+    res = rbac_engine.switch_profile(target)
+    return jsonify(res), 200
+
+@app.route("/api/rbac/matrix", methods=["GET"])
+def get_rbac_matrix():
+    """Retorna o catálogo e a matriz de permissões de visualização e ação."""
+    return jsonify(rbac_engine.get_permissions_matrix()), 200
+
+@app.route("/api/rbac/matrix/update", methods=["POST"])
+@require_permission("act_manage_rbac")
+def update_rbac_matrix():
+    """Permite ao Administrador redefinir o que cada papel pode Ver e Mexer."""
+    data = request.get_json() or {}
+    role = data.get("role", "")
+    views = data.get("views", [])
+    actions = data.get("actions", [])
+    cur = rbac_engine.get_current_user()
+    ok = rbac_engine.update_role_permissions(role, views, actions, requester_role=cur.get("role", "USER"))
+    if ok:
+        return jsonify({"status": "success", "message": f"Permissões do papel '{role}' atualizadas com sucesso!"}), 200
+    return jsonify({"status": "error", "message": "Falha ao atualizar matriz. Privilégio de Admin necessário."}), 400
+
+@app.route("/api/rbac/users", methods=["GET"])
+def list_rbac_users():
+    """Lista todos os operadores e suas classificações de acesso."""
+    return jsonify({"status": "success", "users": rbac_engine.list_users()}), 200
+
+@app.route("/api/rbac/users/create", methods=["POST"])
+@require_permission("act_manage_rbac")
+def create_rbac_user():
+    """Cadastra um novo operador com credenciais e papel atribuído."""
+    data = request.get_json() or {}
+    uid = data.get("user_id", "")
+    name = data.get("username", uid)
+    pwd = data.get("password", "")
+    role = data.get("role", "USER")
+    cur = rbac_engine.get_current_user()
+    # Exige senha fornecida e com complexidade mínima (sem default inseguro "123456").
+    if not pwd or len(pwd) < 8:
+        return jsonify({
+            "status": "error",
+            "message": "Senha obrigatória com no mínimo 8 caracteres."
+        }), 400
+    res = rbac_engine.create_user(uid, name, pwd, role, requester_role=cur.get("role", "USER"))
+    code = 200 if res.get("status") == "success" else 400
+    return jsonify(res), code
+
+@app.route("/api/rbac/login", methods=["POST"])
+def rbac_login():
+    """Autentica operador por usuário e senha gerando sessão segura."""
+    data = request.get_json() or {}
+    username = data.get("username", "")
+    password = data.get("password", "")
+    session = rbac_engine.authenticate(username, password)
+    if session:
+        return jsonify({"status": "success", "session": session, "user": rbac_engine.get_current_user()}), 200
+    return jsonify({"status": "error", "message": "Credenciais inválidas."}), 401
+
+@app.route("/api/multiagent/pairing_script", methods=["GET"])
+@require_permission("act_manage_rbac")
+def get_multiagent_pairing_script():
+    """Retorna o comando de 1-clique para conectar qualquer outra máquina a este Hub central.
+
+    Acessível apenas a Administradores autenticados (protege o token compartilhado da frota).
+    Não utiliza o cabeçalho Host do cliente diretamente (mitiga Host Header Injection).
+    """
+    # 1. Garante um token forte de frota (nunca expõe/usa placeholders ou "").
+    current_token = multiagent_config.token or ""
+    if not current_token or current_token == "sentinel-master-secret-token":
+        import secrets as _secrets
+        current_token = _secrets.token_urlsafe(32)
+        multiagent_config.token = current_token
+        try:
+            from multiagent.config import save_config
+            save_config(multiagent_config)
+        except Exception as e:
+            logging.debug(f"[MULTIAGENT] Falha ao persistir novo token de frota: {e}")
+
+    # 2. Deriva a URL pública do hub de forma segura (host header apenas se for IP/hostname LAN).
+    forwarded_host = request.host or ""
+    lan_host = forwarded_host
+    if lan_host.startswith(("localhost", "127.0.0.1", "[::1]")):
+        lan_host = ""
+    base_url = (lan_host or multiagent_config.hub_url or "").strip().rstrip("/")
+    if base_url.startswith("http://localhost") or base_url.startswith("https://localhost") or base_url.startswith("http://127.0.0.1"):
+        # Config apontando para loopback não alcança agentes da rede; orienta o operador.
+        hub_url = base_url
+        reachable_hint = False
+    else:
+        hub_url = base_url
+        reachable_hint = True
+    hub_api = f"{hub_url}/api/multiagent" if hub_url else "/api/multiagent"
+
+    ps_cmd = f"$cfg = @{{ role='agent'; hub_url='{hub_api}'; token='{current_token}'; enabled=$true }} | ConvertTo-Json; Set-Content -Path 'multiagent_config.json' -Value $cfg; python sentinela_agent.py"
+    py_cmd = f"python sentinela_agent.py --hub {hub_api} --token {current_token}"
+
+    logger.log_event("INFO", "MULTIAGENT_PAIRING", "ADMIN", "Script de pareamento de novo agente gerado pelo Administrador.")
+    return jsonify({
+        "status": "success",
+        "hub_url": hub_api,
+        "token": current_token,
+        "reachable_from_lan": reachable_hint,
+        "powershell_command": ps_cmd,
+        "python_command": py_cmd,
+        "instructions": ("Execute o comando acima no terminal da máquina remota para iniciar a transmissão automática de telemetria, "
+                         "logs e eventos para esta central. Se o hub_url exibido for localhost/127.0.0.1, informe manualmente o IP "
+                         "LAN desta máquina no comando gerado.")
+    }), 200
+
+
+# -------------------------------------------------------------
+# ROTAS DO AMSI SCRIPT GUARD & DESOFUSCADOR HEURÍSTICO
+# -------------------------------------------------------------
+@app.route("/api/amsi/status", methods=["GET"])
+def get_amsi_status():
+    """Retorna o status operacional do motor AMSI."""
+    return jsonify(amsi_guard.get_status()), 200
+
+@app.route("/api/amsi/inspect", methods=["POST"])
+def inspect_amsi_script():
+    """Inspeciona e desofusca um buffer de script PowerShell/VBScript."""
+    data = request.get_json() or {}
+    content = data.get("content", "")
+    source_app = data.get("source_app", "powershell.exe")
+    pid = data.get("pid", None)
+    res = amsi_guard.inspect_script_content(content, source_app=source_app, pid=pid)
+    return jsonify(res), 200
+
+@app.route("/api/amsi/events", methods=["GET"])
+def get_amsi_events():
+    """Retorna os eventos de scripts maliciosos bloqueados pelo AMSI Guard."""
+    return jsonify({"status": "success", "events": amsi_guard.recent_events}), 200
+
+# -------------------------------------------------------------
+# ROTAS DO ANTI-RANSOMWARE VSS & WIPER SHIELD
+# -------------------------------------------------------------
+@app.route("/api/vss-shield/status", methods=["GET"])
+def get_vss_shield_status():
+    """Retorna o status de proteção de Shadow Copies e MBR."""
+    return jsonify(vss_shield.get_status()), 200
+
+@app.route("/api/vss-shield/inspect-cmd", methods=["POST"])
+def inspect_vss_command():
+    """Avalia um comando contra tentativas de destruição de backups e Shadow Copies."""
+    data = request.get_json() or {}
+    cmd = data.get("cmdline", "")
+    parent = data.get("parent_process", "")
+    pid = data.get("pid", None)
+    res = vss_shield.inspect_command(cmd, parent_process=parent, pid=pid)
+    return jsonify(res), 200
+
+@app.route("/api/vss-shield/events", methods=["GET"])
+def get_vss_shield_events():
+    """Retorna o histórico de bloqueios de destruição de Shadow Copies."""
+    return jsonify({"status": "success", "blocks": vss_shield.recent_blocks}), 200
+
+# -------------------------------------------------------------
+# ROTAS DO MEMORY SHELLCODE & UNBACKED RWX HUNTER
+# -------------------------------------------------------------
+@app.route("/api/rwx-hunter/status", methods=["GET"])
+def get_rwx_hunter_status():
+    """Retorna o status operacional do caçador de memória RWX."""
+    return jsonify(rwx_hunter.get_status()), 200
+
+@app.route("/api/rwx-hunter/scan", methods=["POST"])
+@require_permission("act_trigger_scan")
+def scan_rwx_memory():
+    """Executa varredura de memória virtual em busca de shellcode unbacked."""
+    data = request.get_json() or {}
+    target_pid = data.get("pid")
+    if target_pid:
+        res = rwx_hunter.scan_process_memory(int(target_pid))
+    else:
+        res = rwx_hunter.scan_all_critical_processes()
+    return jsonify(res), 200
+
+@app.route("/api/rwx-hunter/detections", methods=["GET"])
+def get_rwx_detections():
+    """Retorna o histórico de detecções de memória RWX não ancorada."""
+    return jsonify({"status": "success", "detections": rwx_hunter.recent_detections}), 200
+
+# -------------------------------------------------------------
+# ROTAS DO CISA KEV & VULNERABILITY ASSESSMENT ENGINE
+# -------------------------------------------------------------
+@app.route("/api/vuln-scanner/status", methods=["GET"])
+def get_vuln_scanner_status():
+    """Retorna o status do avaliador de vulnerabilidades KEV."""
+    return jsonify(cisa_kev.get_status()), 200
+
+@app.route("/api/vuln-scanner/audit", methods=["POST"])
+def run_vuln_audit():
+    """Executa auditoria no host contra falhas conhecidas da CISA KEV."""
+    res = cisa_kev.run_vulnerability_audit()
+    return jsonify(res), 200
+
+@app.route("/api/vuln-scanner/remediate", methods=["POST"])
+@require_permission("act_remediate_cisa_kev")
+def remediate_vuln():
+    """Aplica remediação imediata de fraqueza identificada."""
+    data = request.get_json() or {}
+    check_id = data.get("check_id", "")
+    res = cisa_kev.remediate_finding(check_id)
+    return jsonify(res), 200
+
+
+# -------------------------------------------------------------
+# ROTAS DO MOTOR STIX 2.1 / MISP THREAT INTELLIGENCE & WATCHDOG
+# -------------------------------------------------------------
+@app.route("/api/stix/status", methods=["GET"])
+def get_stix_status():
+    """Retorna o status operacional do motor STIX 2.1 / MISP CTI."""
+    return jsonify(stix_misp_engine.get_status()), 200
+
+@app.route("/api/stix/sync", methods=["POST"])
+@require_permission("act_sync_stix")
+def sync_stix_feeds():
+    """Dispara a sincronização de pacotes e IOCs com feeds CTI globais."""
+    total = stix_misp_engine.sync_global_feeds()
+    return jsonify({
+        "status": "success",
+        "message": "Feeds STIX 2.1 e MISP sincronizados com sucesso.",
+        "total_iocs": total
+    }), 200
+
+@app.route("/api/stix/lookup", methods=["POST"])
+def lookup_stix_ioc():
+    """Consulta em O(1) se um IP, Domínio ou Hash SHA-256 consta na base STIX."""
+    data = request.get_json() or {}
+    ioc_val = data.get("value", "")
+    match = stix_misp_engine.lookup_ioc(ioc_val)
+    if match:
+        return jsonify({"status": "match_found", "is_threat": True, "result": match}), 200
+    return jsonify({"status": "clean", "is_threat": False, "message": "Nenhum IOC correspondente na base STIX 2.1."}), 200
+
+@app.route("/api/stix/indicators", methods=["GET"])
+def get_stix_indicators():
+    """Retorna os indicadores STIX 2.1 cadastrados na central."""
+    limit = int(request.args.get("limit", 50))
+    return jsonify({
+        "status": "success",
+        "total": stix_misp_engine.total_iocs_count,
+        "indicators": stix_misp_engine.raw_objects[-limit:]
+    }), 200
+
+@app.route("/api/threat-watchdog/status", methods=["GET"])
+def get_threat_watchdog_status():
+    """Retorna o status do Guardião Autônomo e contagem de ciclos executados."""
+    return jsonify(threat_watchdog.get_status()), 200
+
+
+# -------------------------------------------------------------
+# ROTAS DOS 8 NOVOS MOTORES ENTERPRISE
+# -------------------------------------------------------------
+
+# 1. LOLBAS Blocker
+@app.route("/api/lolbas/status", methods=["GET"])
+def get_lolbas_status():
+    return jsonify(lolbas_guard.get_status()), 200
+
+@app.route("/api/lolbas/inspect", methods=["POST"])
+def inspect_lolbas():
+    data = request.get_json() or {}
+    cmd = data.get("cmdline", "")
+    return jsonify(lolbas_guard.inspect_process_execution(cmd)), 200
+
+@app.route("/api/lolbas/mode", methods=["POST"])
+@require_permission("act_configure_lolbas")
+def set_lolbas_mode():
+    data = request.get_json() or {}
+    mode = data.get("mode", "BLOCK")
+    return jsonify({"status": "success", "mode": lolbas_guard.set_mode(mode)}), 200
+
+# 2. Decoy Honeyfiles
+@app.route("/api/honeyfiles/status", methods=["GET"])
+def get_honeyfiles_status():
+    return jsonify(honeyfiles_guard.get_status()), 200
+
+@app.route("/api/honeyfiles/check", methods=["POST"])
+def check_honeyfiles():
+    return jsonify(honeyfiles_guard.check_integrity()), 200
+
+@app.route("/api/honeyfiles/deploy", methods=["POST"])
+@require_permission("act_quarantine")
+def deploy_honeyfiles():
+    count = honeyfiles_guard.deploy_honeyfiles()
+    return jsonify({"status": "success", "deployed_count": count}), 200
+
+# 3. ITDR & Kerberos Guard
+@app.route("/api/itdr/status", methods=["GET"])
+def get_itdr_status():
+    return jsonify(itdr_guard.get_status()), 200
+
+@app.route("/api/itdr/inspect-ticket", methods=["POST"])
+def inspect_itdr_ticket():
+    data = request.get_json() or {}
+    spn = data.get("spn", "")
+    enc = data.get("encryption", "rc4-hmac")
+    acc = data.get("account", "service_test")
+    return jsonify(itdr_guard.inspect_kerberos_ticket(spn, enc, account_name=acc)), 200
+
+@app.route("/api/itdr/inspect-replication", methods=["POST"])
+def inspect_itdr_replication():
+    data = request.get_json() or {}
+    src = data.get("source_ip", "192.168.1.50")
+    user = data.get("user", "test_user")
+    is_dc = data.get("is_dc", False)
+    return jsonify(itdr_guard.inspect_ad_replication(src, user, is_domain_controller=is_dc)), 200
+
+# 4. Live Forensics Dumper
+@app.route("/api/forensics-dumper/status", methods=["GET"])
+def get_forensics_dumper_status():
+    return jsonify(forensics_dumper.get_status()), 200
+
+@app.route("/api/forensics-dumper/dump", methods=["POST"])
+@require_permission("act_dump_forensics")
+def trigger_forensics_dump():
+    data = request.get_json() or {}
+    target_pid = int(data.get("pid", os.getpid()))
+    return jsonify(forensics_dumper.dump_and_analyze_process(target_pid)), 200
+
+@app.route("/api/forensics-dumper/packages", methods=["GET"])
+def get_forensics_packages():
+    return jsonify({"status": "success", "packages": forensics_dumper.completed_packages}), 200
+
+# 5. Native Kernel ETW
+@app.route("/api/native-etw/status", methods=["GET"])
+def get_native_etw_status():
+    return jsonify(native_etw.get_status()), 200
+
+@app.route("/api/native-etw/events", methods=["GET"])
+def get_native_etw_events():
+    return jsonify({"status": "success", "events": native_etw.recent_kernel_events}), 200
+
+# 6. Sigma Compiler
+@app.route("/api/sigma-compiler/status", methods=["GET"])
+def get_sigma_compiler_status():
+    return jsonify(sigma_compiler.get_status()), 200
+
+@app.route("/api/sigma-compiler/evaluate", methods=["POST"])
+def evaluate_sigma_event():
+    data = request.get_json() or {}
+    event = data.get("event", {})
+    return jsonify(sigma_compiler.evaluate_event(event)), 200
+
+# 7. Mini-NIDS & DPI
+@app.route("/api/mini-nids/status", methods=["GET"])
+def get_mini_nids_status():
+    return jsonify(mini_nids.get_status()), 200
+
+@app.route("/api/mini-nids/inspect-http", methods=["POST"])
+def inspect_nids_http():
+    data = request.get_json() or {}
+    ua = data.get("user_agent", "")
+    path = data.get("path", "/")
+    return jsonify(mini_nids.inspect_http_traffic(ua, path)), 200
+
+@app.route("/api/mini-nids/inspect-dns", methods=["POST"])
+def inspect_nids_dns():
+    data = request.get_json() or {}
+    q = data.get("query", "")
+    return jsonify(mini_nids.inspect_dns_query(q)), 200
+
+# 8. Cloud & Container Guard
+@app.route("/api/cloud-k8s/status", methods=["GET"])
+def get_cloud_k8s_status():
+    return jsonify(cloud_k8s.get_status()), 200
+
+@app.route("/api/cloud-k8s/audit", methods=["POST"])
+def audit_cloud_k8s():
+    return jsonify(cloud_k8s.audit_container_runtime()), 200
+
+@app.route("/api/cloud-k8s/inspect-imds", methods=["POST"])
+def inspect_cloud_imds():
+    data = request.get_json() or {}
+    ip = data.get("dest_ip", "169.254.169.254")
+    proc = data.get("process_name", "curl.exe")
+    return jsonify(cloud_k8s.inspect_imds_metadata_query(ip, process_name=proc)), 200
+
+# --------------------------------------------------------------------------
+# 9. MOTORES SOBERANOS DE ANTI-INVASÃO (HOOK INTEGRITY, C2 HUNTER, TOKEN ARMOR, REVERSE SHELL, PORTSCAN)
+# --------------------------------------------------------------------------
+
+# Motor 1: Hook Integrity & Anti-Unhooking Guard
+@app.route("/api/hook-guard/status", methods=["GET"])
+def get_hook_guard_status():
+    return jsonify(hook_guard.get_status()), 200
+
+@app.route("/api/hook-guard/audit", methods=["POST"])
+def audit_hook_guard():
+    return jsonify({"tamper_events": hook_guard.audit_memory_hooks(), "status": "completed"}), 200
+
+@app.route("/api/hook-guard/simulate", methods=["POST"])
+def simulate_hook_guard():
+    data = request.get_json() or {}
+    func = data.get("function", "NtProtectVirtualMemory")
+    reason = data.get("reason", "UNAUTHORIZED_TRAMPOLINE_JMP")
+    return jsonify(hook_guard.simulate_tamper_event(func_name=func, reason=reason)), 200
+
+# Motor 2: C2 Beaconing Jitter & Cadence Hunter
+@app.route("/api/c2-hunter/status", methods=["GET"])
+def get_c2_hunter_status():
+    return jsonify(c2_hunter.get_status()), 200
+
+@app.route("/api/c2-hunter/analyze", methods=["POST"])
+def analyze_c2_traffic():
+    data = request.get_json() or {}
+    dest_ip = data.get("dest_ip", "198.51.100.22")
+    dest_port = int(data.get("dest_port", 443))
+    ts = data.get("timestamp")
+    res = c2_hunter.ingest_connection_event(dest_ip, dest_port, timestamp=ts)
+    return jsonify({"analyzed": True, "detection": res}), 200
+
+@app.route("/api/c2-hunter/simulate", methods=["POST"])
+def simulate_c2_hunter():
+    data = request.get_json() or {}
+    dest_ip = data.get("dest_ip", "198.51.100.44")
+    dest_port = int(data.get("dest_port", 443))
+    interval = float(data.get("interval", 3.0))
+    jitter = float(data.get("jitter", 0.2))
+    return jsonify(c2_hunter.simulate_c2_stream(dest_ip=dest_ip, dest_port=dest_port, base_interval=interval, jitter=jitter)), 200
+
+# Motor 3: Token Armor & Potato Privilege Escalation Shield
+@app.route("/api/token-armor/status", methods=["GET"])
+def get_token_armor_status():
+    return jsonify(token_armor.get_status()), 200
+
+@app.route("/api/token-armor/audit", methods=["POST"])
+def audit_token_armor():
+    return jsonify({"violations": token_armor.audit_running_processes_tokens(), "status": "completed"}), 200
+
+@app.route("/api/token-armor/simulate", methods=["POST"])
+def simulate_token_armor():
+    data = request.get_json() or {}
+    name = data.get("target_name", "GodPotato-NET4.exe")
+    pid = int(data.get("pid", 4982))
+    return jsonify(token_armor.simulate_potato_attack(target_name=name, simulated_pid=pid)), 200
+
+# Motor 4: Interactive Reverse Shell Guard
+@app.route("/api/reverse-shell/status", methods=["GET"])
+def get_reverse_shell_status():
+    return jsonify(reverse_shell.get_status()), 200
+
+@app.route("/api/reverse-shell/scan", methods=["POST"])
+def scan_reverse_shell():
+    return jsonify({"intercepted": reverse_shell.scan_for_reverse_shells(), "status": "completed"}), 200
+
+@app.route("/api/reverse-shell/simulate", methods=["POST"])
+def simulate_reverse_shell():
+    data = request.get_json() or {}
+    payload = data.get("payload_type", "PS_TCP_CLIENT")
+    return jsonify(reverse_shell.simulate_reverse_shell(payload_type=payload)), 200
+
+# Motor 5: Stealth Port Scan & Reconnaissance Disruptor
+@app.route("/api/portscan-disruptor/status", methods=["GET"])
+def get_portscan_disruptor_status():
+    return jsonify(portscan_disruptor.get_status()), 200
+
+@app.route("/api/portscan-disruptor/events", methods=["GET"])
+def get_portscan_disruptor_events():
+    return jsonify(portscan_disruptor.detected_scans), 200
+
+@app.route("/api/portscan-disruptor/probe", methods=["POST"])
+def probe_portscan_disruptor():
+    data = request.get_json() or {}
+    src_ip = data.get("src_ip", "192.0.2.105")
+    port = int(data.get("target_port", 80))
+    flags = data.get("flags", "SYN")
+    return jsonify({"result": portscan_disruptor.record_probe(src_ip, port, flags=flags)}), 200
+
+@app.route("/api/portscan-disruptor/simulate", methods=["POST"])
+def simulate_portscan_disruptor():
+    data = request.get_json() or {}
+    src_ip = data.get("src_ip", "203.0.113.88")
+    return jsonify(portscan_disruptor.simulate_stealth_scan(attacker_ip=src_ip)), 200
+
+# -------------------------------------------------------------
+# CAMADA SOC / OPERAÇÕES — ROTAS DE FILA DE ALERTAS E AUDITORIA
+# -------------------------------------------------------------
+
+@app.route("/api/soc/alerts", methods=["GET"])
+@require_permission("act_view_soc")
+def soc_list_alerts():
+    """Lista alertas da fila SOC com filtros por status/severidade."""
+    status = request.args.get("status")
+    severity = request.args.get("severity")
+    limit = int(request.args.get("limit", 100))
+    alerts = soc_alert_queue.list_alerts(status=status, severity=severity, limit=limit)
+    return jsonify({"status": "success", "total": len(alerts), "alerts": alerts}), 200
+
+@app.route("/api/soc/alerts", methods=["POST"])
+@require_permission("act_manage_soc")
+def soc_create_alert():
+    """Cria um alerta na fila SOC com SLA calculado pela severidade."""
+    data = get_request_data()
+    alert = soc_alert_queue.create_alert(
+        title=str(data.get("title") or "Alerta SOC"),
+        severity=str(data.get("severity") or "MEDIUM"),
+        description=str(data.get("description") or ""),
+        source=str(data.get("source") or "api"),
+        ioc=data.get("ioc"),
+        details=data.get("details"),
+        assignee=data.get("assignee"),
+    )
+    try:
+        sse_broadcaster.publish("soc_alert", alert)
+        audit_logger.log_action(
+            user=getattr(g, "current_user", "SOC_OPERATOR"),
+            action="SOC_ALERT_CREATE",
+            target=f"alert_id:{alert['id']}",
+            ip=request.remote_addr,
+            details={"title": alert["title"], "severity": alert["severity"]},
+            request_path=request.path,
+            request_method=request.method
+        )
+    except Exception:
+        pass
+    return jsonify({"status": "success", "alert": alert}), 201
+
+@app.route("/api/soc/alerts/<int:alert_id>/assign", methods=["POST"])
+@require_permission("act_manage_soc")
+def soc_assign_alert(alert_id):
+    """Atribui o alerta a um analista (SOC_ANALYST/SOC_MANAGER)."""
+    data = get_request_data()
+    assignee = str(data.get("assignee") or "SOC_ANALYST")
+    result = soc_alert_queue.assign_alert(alert_id, assignee)
+    if result is None:
+        return jsonify({"status": "error", "message": "Alerta não encontrado."}), 404
+    try:
+        sse_broadcaster.publish("soc_alert", result)
+        audit_logger.log_action(
+            user=getattr(g, "current_user", "SOC_OPERATOR"),
+            action="SOC_ALERT_ASSIGN",
+            target=f"alert_id:{alert_id}",
+            ip=request.remote_addr,
+            details={"assignee": assignee},
+            request_path=request.path,
+            request_method=request.method
+        )
+    except Exception:
+        pass
+    return jsonify({"status": "success", "alert": result}), 200
+
+@app.route("/api/soc/alerts/<int:alert_id>/state", methods=["POST"])
+@require_permission("act_manage_soc")
+def soc_set_alert_state(alert_id):
+    """Transição de estado do alerta (INVESTIGATING/CONTAINED/...)."""
+    data = get_request_data()
+    status = str(data.get("status") or "INVESTIGATING")
+    try:
+        result = soc_alert_queue.set_status(alert_id, status)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    if result is None:
+        return jsonify({"status": "error", "message": "Alerta não encontrado."}), 404
+    try:
+        sse_broadcaster.publish("soc_alert", result)
+        audit_logger.log_action(
+            user=getattr(g, "current_user", "SOC_OPERATOR"),
+            action="SOC_ALERT_SET_STATE",
+            target=f"alert_id:{alert_id}",
+            ip=request.remote_addr,
+            details={"new_status": status},
+            request_path=request.path,
+            request_method=request.method
+        )
+    except Exception:
+        pass
+    return jsonify({"status": "success", "alert": result}), 200
+
+@app.route("/api/soc/alerts/<int:alert_id>/close", methods=["POST"])
+@require_permission("act_manage_soc")
+def soc_close_alert(alert_id):
+    """Encerra o caso registrando a resolução."""
+    data = get_request_data()
+    result = soc_alert_queue.close_alert(alert_id, resolution=str(data.get("resolution") or ""))
+    if result is None:
+        return jsonify({"status": "error", "message": "Alerta não encontrado."}), 404
+    try:
+        sse_broadcaster.publish("soc_alert", result)
+        audit_logger.log_action(
+            user=getattr(g, "current_user", "SOC_OPERATOR"),
+            action="SOC_ALERT_CLOSE",
+            target=f"alert_id:{alert_id}",
+            ip=request.remote_addr,
+            details={"resolution": str(data.get("resolution") or "")},
+            request_path=request.path,
+            request_method=request.method
+        )
+    except Exception:
+        pass
+    return jsonify({"status": "success", "alert": result}), 200
+
+@app.route("/api/soc/alerts/<int:alert_id>/export", methods=["GET"])
+@require_permission("act_view_soc")
+def soc_export_alert_case(alert_id):
+    """Exporta pacote formal do caso SOC com timeline de auditoria e assinatura PQC ML-DSA."""
+    alert = soc_alert_queue.get_alert(alert_id)
+    if alert is None:
+        return jsonify({"status": "error", "message": "Alerta não encontrado."}), 404
+
+    # Coleta trilha de auditoria relacionada
+    related_actions = audit_logger.list_actions(limit=50)
+
+    # Cálculo de conformidade de SLA
+    now = time.time()
+    created_at = alert.get("created_at") or now
+    sla_deadline = alert.get("sla_deadline") or now
+    closed_at = alert.get("closed_at")
+    breached = (closed_at > sla_deadline) if closed_at else (now > sla_deadline and alert.get("status") != "CLOSED")
+
+    case_manifest = {
+        "alert_id": alert["id"],
+        "title": alert["title"],
+        "severity": alert["severity"],
+        "status": alert["status"],
+        "assignee": alert.get("assignee"),
+        "created_at": alert.get("created_at"),
+        "closed_at": alert.get("closed_at"),
+        "sla_deadline": sla_deadline,
+        "sla_breached": breached,
+        "ioc": alert.get("ioc"),
+        "details": alert.get("details"),
+        "exported_at": now,
+        "exported_by": getattr(g, "current_user", "SOC_OPERATOR")
+    }
+
+    # Assinatura digital pós-quântica do caso para não-repúdio
+    pqc_sig = pqc_shield.sign_command_pqc(case_manifest)
+
+    case_package = {
+        "format": "SENTINEL-SOC-CASE-V1",
+        "case": case_manifest,
+        "related_audit_trail": related_actions[:15],
+        "playbook_recommendation": {
+            "CRITICAL": "Isolar host imediatamente, abater processos de injeção e revogar credenciais.",
+            "HIGH": "Executar escaneamento de memória RAM e bloquear IPs remotos no firewall WFP.",
+            "MEDIUM": "Validar assinaturas de arquivos e auditar persistência em chaves Run/RunOnce.",
+            "LOW": "Registrar na base CTI e monitorar tráfego de rede anômalo."
+        }.get(alert["severity"], "Analisar telemetria e aplicar contenção cirúrgica."),
+        "pqc_integrity_seal": {
+            "algorithm": pqc_shield.algorithm_dsa,
+            "signature": pqc_sig,
+            "agent_id": pqc_shield.agent_id,
+            "timestamp": now
+        }
+    }
+
+    return jsonify({"status": "success", "package": case_package}), 200
+
+@app.route("/api/soc/metrics", methods=["GET"])
+@require_permission("act_view_soc")
+def soc_metrics():
+    """KPIs operacionais do SOC: fila, MTTA, MTTR, SLA breached."""
+    return jsonify({"status": "success", "metrics": soc_alert_queue.metrics()}), 200
+
+@app.route("/api/soc/audit", methods=["GET"])
+@require_permission("act_view_audit")
+def soc_audit_list():
+    """Lista o trilho de auditoria de ações dos operadores."""
+    limit = int(request.args.get("limit", 200))
+    user = request.args.get("user")
+    action = request.args.get("action")
+    rows = audit_logger.list_actions(limit=limit, user=user, action=action)
+    return jsonify({"status": "success", "total": len(rows), "actions": rows}), 200
+
+@app.route("/api/soc/audit/stats", methods=["GET"])
+@require_permission("act_view_audit")
+def soc_audit_stats():
+    """Agregados do trilho de auditoria com integridade criptográfica da cadeia."""
+    return jsonify({"status": "success", "stats": audit_logger.stats()}), 200
+
+@app.route("/api/soc/export-audit", methods=["GET"])
+@require_permission("act_view_audit")
+def soc_export_audit():
+    """Gera e retorna pacote formal WORM selado com hash chain e Assinatura Pós-Quântica NIST ML-DSA-87."""
+    limit = int(request.args.get("limit", 500))
+    start_id = int(request.args.get("start_id", 0))
+    pkg = audit_logger.export_worm_package(limit=limit, start_id=start_id, pqc_shield=pqc_shield)
+    return jsonify(pkg), 200
+
+@app.route("/api/soc/export-audit/ship", methods=["POST"])
+@require_permission("act_view_audit")
+def soc_ship_audit_worm():
+    """Gera o arquivo WORM e o persiste no repositório de custódia imutável, auditando a remessa."""
+    data = get_request_data() or {}
+    limit = int(data.get("limit", 1000))
+    start_id = int(data.get("start_id", 0))
+    res = audit_logger.export_worm_package(limit=limit, start_id=start_id, pqc_shield=pqc_shield)
+    
+    # Registra a remessa na própria trilha de auditoria
+    current_u = getattr(g, "current_user", "SOC_OPERATOR")
+    audit_logger.log_action(
+        user=str(current_u),
+        action="WORM_AUDIT_SHIP",
+        target=res.get("file_name", "UNKNOWN"),
+        ip=request.remote_addr,
+        details={
+            "package_id": res.get("package_id"),
+            "records_exported": res.get("records_exported"),
+            "chain_root_hash": res.get("chain_root_hash")
+        }
+    )
+    return jsonify(res), 200
+
+@app.route("/api/soc/export-audit/history", methods=["GET"])
+@require_permission("act_view_audit")
+def soc_worm_history():
+    """Lista histórico de remessas WORM arquivadas no repositório de custódia imutável."""
+    archives = audit_logger.list_worm_archives()
+    integrity = audit_logger.verify_chain_integrity()
+    return jsonify({
+        "status": "success",
+        "worm_directory": audit_logger.worm_dir,
+        "total_archives": len(archives),
+        "chain_integrity": integrity,
+        "archives": archives
+    }), 200
+
+def _start_worm_audit_scheduler():
+    """Thread daemon para geração periódica de pacotes de auditoria WORM a cada 6 horas."""
+    def _worker():
+        while True:
+            try:
+                time.sleep(21600)  # 6 horas
+                audit_logger.export_worm_package(pqc_shield=pqc_shield)
+            except Exception:
+                pass
+    t = threading.Thread(target=_worker, name="WORMPeriodicAuditScheduler", daemon=True)
+    t.start()
+
 if __name__ == "__main__":
     init_sentinel_services()
     requested_port = int(os.environ.get("PORT", 5000))

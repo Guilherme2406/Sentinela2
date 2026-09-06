@@ -119,11 +119,19 @@ s.Save
             with open(temp_vbs, "w", encoding="utf-8") as f:
                 f.write(vbs_script)
 
-            os.system(f'cscript //nologo "{temp_vbs}"')
+            import subprocess
+            subprocess.run(
+                ["cscript", "//nologo", temp_vbs],
+                capture_output=True,
+                timeout=10,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)
+            )
             if os.path.exists(temp_vbs):
                 os.remove(temp_vbs)
 
             return True
+
+
         except Exception as e:
             logging.error(f"[SHORTCUT ERROR] {e}")
             return False

@@ -19,7 +19,8 @@ _SUBMODULES = [
     "foreach",
 ]
 
+_pkg = __name__.rsplit(".__init__", 1)[0] if __name__.endswith(".__init__") else __name__
 for _mod_name in _SUBMODULES:
-    importlib.import_module(f"{__name__}.{_mod_name}")
+    importlib.import_module(f"{_pkg}.{_mod_name}")
 
 __all__ = _SUBMODULES

@@ -748,7 +748,7 @@ class TestTelemetryCollector(TestFunctionsEngineBase):
         # Alimenta o storage
         fed = collector.feed_storage(self.storage)
         self.assertGreater(fed, 0)
-        self.assertEqual(self.engine.evaluate('last("sentinel.active_layers.count")'), 20)
+        self.assertEqual(self.engine.evaluate('last("sentinel.active_layers.count")'), 25)
 
 
 if __name__ == "__main__":

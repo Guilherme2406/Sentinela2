@@ -41,6 +41,8 @@ class MultiAgentClient:
         self.sync_count = 0
         self.layers_active = 0
         self.telemetry_provider: Optional[Any] = None
+        self.active_policy: Dict[str, Any] = {}
+        self.is_remotely_isolated: bool = False
 
     # ------------------------------------------------------------------
     # API pública
@@ -52,6 +54,62 @@ class MultiAgentClient:
     def push_local_event(self, severity: str, category: str, target: str, description: str, **extra: Any) -> None:
         """Enfileira um evento local para sincronização com o hub (usado pelo hook do logger)."""
         self.bus.push(severity, category, target, description, **extra)
+
+    def broadcast_threat_ioc(self, ioc_type: str, value: str, severity: str = "HIGH", reason: str = "") -> Dict[str, Any]:
+        """
+        Dispara broadcast federado imediato de um novo IOC (IP malicioso, Hash de Malware, Domínio C2)
+        para todos os nós da rede e imuniza o host local instantaneamente.
+        """
+        ioc_payload = {
+            "origin_agent_id": self.config.agent_id,
+            "ioc_type": str(ioc_type).lower().strip(),
+            "value": str(value).strip(),
+            "severity": severity,
+            "reason": reason,
+            "timestamp": time.time()
+        }
+        # Imuniza nó local
+        self.ingest_distributed_ioc(ioc_payload)
+
+        # Enfileira evento prioritário no barramento para o Hub
+        self.bus.push(
+            severity,
+            "DISTRIBUTED_DEFENSE",
+            ioc_payload["value"],
+            f"Novo IOC propagado ({ioc_type}): {reason}",
+            ioc_type=ioc_type,
+            origin_agent_id=self.config.agent_id
+        )
+
+        # Dispara envio síncrono imediato para o hub se conectado
+        resp = self._post_json("/api/multiagent/broadcast-ioc", ioc_payload)
+        return {
+            "status": "success",
+            "ioc": ioc_payload,
+            "hub_notified": resp is not None
+        }
+
+    def ingest_distributed_ioc(self, ioc_data: Dict[str, Any]) -> bool:
+        """Aplica um IOC recebido da malha de defesa diretamente nos motores locais."""
+        try:
+            ioc_type = str(ioc_data.get("ioc_type", "")).lower()
+            val = str(ioc_data.get("value", "")).strip()
+            reason = str(ioc_data.get("reason", "Malha Colaborativa"))
+            if not val:
+                return False
+
+            if ioc_type == "ip":
+                from sentinel_api import firewall
+                if firewall:
+                    firewall.block_ip(val, reason=f"[MALHA COLABORATIVA] {reason}")
+            elif ioc_type in ("hash", "sha256", "md5"):
+                from sentinel_api import threat_detector
+                if threat_detector and hasattr(threat_detector, "add_threat_hash"):
+                    threat_detector.add_threat_hash(val, f"[MALHA COLABORATIVA] {reason}")
+            return True
+        except Exception as e:
+            logger.debug(f"[MULTIAGENT] Erro ao ingerir IOC distribuído: {e}")
+            return False
 
     def start(self) -> None:
         if self._running:
@@ -86,11 +144,14 @@ class MultiAgentClient:
         while self._running:
             try:
                 now = time.time()
-                ok = self._post("/api/multiagent/heartbeat", self._build_heartbeat())
-                if ok:
+                hb_res = self._post_json("/api/multiagent/heartbeat", self._build_heartbeat())
+                if hb_res is not None:
                     self.heartbeat = True
                     self.last_error = ""
                     self.sync_count += 1
+                    if "policy" in hb_res:
+                        self.active_policy = hb_res["policy"]
+                    self.is_remotely_isolated = bool(hb_res.get("isolated"))
                     if now - last_tel >= self.config.telemetry_interval:
                         self._send_telemetry()
                         last_tel = now
@@ -237,3 +298,17 @@ class MultiAgentClient:
         except Exception as e:
             self.last_error = str(e)[:200]
             return False
+
+    def _post_json(self, path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if requests is None:  # pragma: no cover
+            return None
+        url = self.config.hub_url.rstrip("/") + path
+        headers = {"Content-Type": "application/json", "X-Sentinel-Token": self.config.token or ""}
+        try:
+            resp = requests.post(url, json=payload, headers=headers, timeout=6)
+            if resp.status_code < 400:
+                return resp.json() if resp.text else {}
+            return None
+        except Exception as e:
+            self.last_error = str(e)[:200]
+            return None

@@ -1,7 +1,7 @@
 # sentinel_core/sentinel_cli.py
-import sqlite3
 import os
 import sys
+
 from typing import Optional
 from sentinel_core.logger import SecurityEventLogger
 from sentinel_core.crypto_vault import CryptoVault
@@ -51,7 +51,8 @@ def show_menu():
     print(" [9]  [EDR] Varredura e Auto-Remediação de Processos Suspeitos")
     print(" [10] [FIREWALL] Listar e Gerenciar IPs Banidos no SO")
     print(" [11] [IA] Análise Preditiva de Entropia de Shannon / Zero-Day")
-    print(" [12] Limpar banco de dados de eventos")
+    print(" [12] [SYSMON] Diagnóstico e Instalação da Telemetria de Kernel")
+    print(" [13] Limpar banco de dados de eventos")
     print(" [0]  Sair")
     print("=" * 65)
 
@@ -123,6 +124,7 @@ def manage_quarantine_cli():
             idx = int(num) - 1
             if 0 <= idx < len(items):
                 target_item = items[idx]
+                dest = input("Digite o caminho de destino (ou Enter para padrão 'restored/'): ").strip()
                 success, restored_path = soar.restore_file(target_item['name'], restore_to_path=dest if dest else None)
                 if success:
                     detector.add_whitelist(target_item['name'])
@@ -169,7 +171,7 @@ def scan_file_cli():
     print(f"Status      : {res.get('status')}")
     print(f"Hash SHA-256: {res.get('hash', 'N/A')}")
     if res.get("status") == "MALWARE_DETECTED":
-        print(f"🚨 ALERTA: Assinatura de Malware detectada!")
+        print("🚨 ALERTA: Assinatura de Malware detectada!")
         print(f"Descrição  : {res.get('description')}")
         iso = input("Deseja isolar este arquivo na quarentena agora? (s/N): ").strip().lower()
         if iso == 's':
@@ -234,6 +236,35 @@ def ai_entropy_cli():
     if res['flags']:
         print(f"  • Flags Acionadas:     {', '.join(res['flags'])}")
 
+def sysmon_cli():
+    from sentinel_core.sysmon_installer import SysmonInstallerManager
+    mgr = SysmonInstallerManager(project_root=ROOT_DIR)
+    status = mgr.get_status()
+    print("\n🔍 --- STATUS DO MICROSOFT SYSMON ---")
+    print(f"  • Plataforma Windows:   {'SIM' if status['platform_windows'] else 'NÃO'}")
+    print(f"  • Privilégio Admin:     {'SIM' if status['is_admin'] else 'NÃO (Usuário Comum)'}")
+    print(f"  • Serviço Instalado:    {'SIM (' + str(status['service_name']) + ')' if status['service_installed'] else 'NÃO'}")
+    print(f"  • Serviço em Execução:  {'🟢 ATIVO' if status['service_running'] else '🔴 PARADO'}")
+    print(f"  • Canal EventLog Ativo: {'🟢 SIM' if status['channel_active'] else '🔴 INATIVO'}")
+    print(f"  • Config Endurecida:    {'PRESENTE' if status['config_exists'] else 'AUSENTE'}")
+    print(f"  • Recomendação:         {status['recommendation']}")
+
+    act = input("\n[1] Instalar / Atualizar Configuração Endurecida  [2] Copiar Comando PowerShell  [0] Voltar: ").strip()
+    if act == '1':
+        print("\n[*] Iniciando orquestração do Sysmon...")
+        res = mgr.install()
+        if res.get("status") == "success":
+            print("✅ Sysmon configurado com sucesso!")
+        elif res.get("code") == "ELEVATION_REQUIRED":
+            print(f"⚠️ {res['message']}")
+            print("Execute o comando abaixo em um PowerShell elevado (Administrador):")
+            print(f"  👉 {res['recommended_command']}")
+        else:
+            print(f"❌ Falha: {res.get('message', res)}")
+    elif act == '2':
+        print("\nExecute no PowerShell como Administrador:")
+        print(f"  👉 {mgr.get_install_command()}")
+
 def clear_db():
     confirm = input("⚠️ Tem certeza que deseja apagar TODOS os registros de log? (s/N): ").strip()
     if confirm.lower() == 's':
@@ -271,6 +302,8 @@ def main():
             elif choice == '11':
                 ai_entropy_cli()
             elif choice == '12':
+                sysmon_cli()
+            elif choice == '13':
                 clear_db()
             elif choice == '0':
                 print("Encerrando painel CLI do Sentinela. Até mais!")

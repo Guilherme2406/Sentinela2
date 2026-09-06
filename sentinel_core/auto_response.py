@@ -161,6 +161,7 @@ class AutoResponseEngine:
         items = []
         try:
             import sqlite3
+            from contextlib import closing
             # Resolve o caminho do banco de dados de eventos
             db_candidates = []
             if self.logger and hasattr(self.logger, 'db_path') and self.logger.db_path:
@@ -185,11 +186,12 @@ class AutoResponseEngine:
                     
                     if active_db:
                         try:
-                            with sqlite3.connect(active_db) as conn:
+                            with closing(sqlite3.connect(active_db)) as conn:
                                 cur = conn.cursor()
                                 # 1. Busca por nome exato do arquivo de quarentena
                                 cur.execute("SELECT target FROM security_events WHERE description LIKE ? ORDER BY id DESC LIMIT 1", (f"%{fname}%",))
                                 row = cur.fetchone()
+
                                 if row and row[0]:
                                     original_location = row[0]
                                 else:

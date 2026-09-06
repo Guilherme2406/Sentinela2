@@ -1,0 +1,3 @@
+[pool]
+host=stratum+tcp://crypto.pool.example:3333
+user=wallet

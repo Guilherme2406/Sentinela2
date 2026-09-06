@@ -2,7 +2,7 @@
 import os
 import hashlib
 import logging
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 from sentinel_core.logger import SecurityEventLogger
 from sentinel_core.threat_detector import ThreatDetector
 from sentinel_core.auto_response import AutoResponseEngine
@@ -71,18 +71,27 @@ class FileIntegrityMonitor:
                             if h:
                                 self.file_hashes[filepath] = h
                                 count += 1
-        logging.info(f"[FIM] Baseline concluído com {count} arquivos protegidos.")
+    @property
+    def baseline(self) -> Dict[str, str]:
+        return dict(self.file_hashes)
 
-    def scan(self):
+    def build_baseline(self) -> Dict[str, str]:
+        self._build_baseline()
+        return dict(self.file_hashes)
+
+    def scan(self) -> List[Dict[str, Any]]:
         """Executa varredura de integridade e verificação de ameaças nos arquivos."""
         found_files = set()
+        detected_changes = []
         for path in self.watch_paths:
             if not os.path.exists(path):
                 continue
             if os.path.isfile(path):
                 if not self._should_ignore(path):
                     found_files.add(path)
-                    self._check_file(path)
+                    res = self._check_file(path)
+                    if res:
+                        detected_changes.append(res)
             else:
                 for root, dirs, files in os.walk(path):
                     dirs[:] = [d for d in dirs if d not in IGNORED_DIRS]
@@ -90,32 +99,41 @@ class FileIntegrityMonitor:
                         filepath = os.path.join(root, file)
                         if not self._should_ignore(filepath):
                             found_files.add(filepath)
-                            self._check_file(filepath)
+                            res = self._check_file(filepath)
+                            if res:
+                                detected_changes.append(res)
 
         for tracked_path in list(self.file_hashes.keys()):
             if tracked_path not in found_files and not os.path.exists(tracked_path):
                 if self.logger:
                     self.logger.log_event("WARNING", "FIM", tracked_path, "Arquivo removido do diretório protegido.")
                 del self.file_hashes[tracked_path]
+                detected_changes.append({"event": "DELETED", "path": tracked_path})
+
+        return detected_changes
 
     run_scan = scan
 
-    def _check_file(self, filepath: str):
+    def _check_file(self, filepath: str) -> Optional[Dict[str, Any]]:
         current_hash = self._hash_file(filepath)
         if not current_hash:
-            return
+            return None
 
         is_new = filepath not in self.file_hashes
         is_modified = not is_new and self.file_hashes[filepath] != current_hash
+        event_result = None
 
         if is_new:
             if self.logger:
                 self.logger.log_event("WARNING", "FIM", filepath, "Novo arquivo detectado no diretório protegido.")
             self.file_hashes[filepath] = current_hash
+            event_result = {"event": "CREATED", "path": filepath, "hash": current_hash}
         elif is_modified:
             if self.logger:
                 self.logger.log_event("HIGH", "FIM", filepath, "ALERTA: Integridade violada! Hash SHA-256 alterado.")
+            old_hash = self.file_hashes[filepath]
             self.file_hashes[filepath] = current_hash
+            event_result = {"event": "MODIFIED", "path": filepath, "old_hash": old_hash, "new_hash": current_hash}
 
         # Se for novo ou modificado, avalia ameaça
         if (is_new or is_modified) and self.threat_detector:
@@ -125,4 +143,9 @@ class FileIntegrityMonitor:
                     logging.warning(f"[FIM+SOAR] Isolando arquivo malicioso automaticamente: {filepath}")
                     self.auto_response.isolate_file(filepath)
                     self.file_hashes.pop(filepath, None)
+                if event_result:
+                    event_result["threat"] = result
+
+        return event_result
+
 

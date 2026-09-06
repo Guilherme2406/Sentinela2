@@ -5,15 +5,10 @@ import sys
 import logging
 from pathlib import Path
 
-# Configuração de logging estruturado
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] (%(name)s) %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("sentinel_daemon.log", encoding="utf-8")
-    ]
-)
+# NOTE: A configuração de logging (basicConfig) foi movida para o bloco
+# '__main__' abaixo. Antes, apenas importar este módulo reconfigurava o
+# logger raiz do processo, sequestrando o console dos pontos de entrada
+# (main.py/sentinela_service.py) e misturando os logs da suíte de testes.
 logger = logging.getLogger("SentinelDaemon")
 
 class SentinelDaemon:
@@ -21,39 +16,71 @@ class SentinelDaemon:
     Orquestrador Maestro do Sentinel V4.
     Mantém os serviços de Deception, Mesh P2P e Defesa em execução assíncrona paralela.
     """
-    def __init__(self):
+    def __init__(self, logger_instance=None):
         self.is_running = False
         self.tasks = []
+        self.logger = logger_instance
         
-        # Diretório base dos canários
-        self.canary_dir = Path("./canary_traps")
+        # Diretório base dos canários ancorado à raiz absoluta do projeto
+        self.project_root = Path(__file__).resolve().parent.parent
+        self.canary_dir = self.project_root / "canary_traps"
         self.canary_dir.mkdir(exist_ok=True)
+
+        # Motores reais integrados
+        from sentinel_core.deception_grid import CanaryFileTracker
+        from sentinel_core.mesh_orchestrator import DefensiveMeshOrchestrator
+        from sentinel_core.threat_detector import ThreatDetector
+        self.canary_tracker = CanaryFileTracker(watch_dirs=[str(self.canary_dir)], logger=self.logger)
+        self.mesh_orchestrator = DefensiveMeshOrchestrator(node_id="SentinelDaemonNode", logger=self.logger)
+        self.threat_detector = ThreatDetector(logger=self.logger)
 
     async def _start_deception_grid(self):
         """Inicializa e monitora a Deception Grid (Canários e Honeypots)."""
         logger.info("🪤 [Deception Grid] Inicializando armadilhas e arquivos canário...")
+        self.canary_tracker.deploy_canaries()
         
-        # Simulação do loop de escuta das portas Honeypot e checagem de Canários
         while self.is_running:
-            # Aqui o DeceptionGrid inspeciona modificações nos arquivos canário
+            # Inspeção real de integridade dos arquivos canário
+            try:
+                tampered = self.canary_tracker.check_canaries()
+                if tampered:
+                    logger.warning(f"🚨 [Deception Grid] Canários violados detectados: {tampered}")
+            except Exception as e:
+                logger.debug(f"[Deception Grid] Erro na inspeção: {e}")
             await asyncio.sleep(5)
-            logger.debug("🪤 [Deception Grid] Integridade dos canários verificada. Status: OK.")
 
     async def _start_mesh_orchestrator(self):
         """Inicializa o nó P2P da Mesh Network."""
         logger.info("🌐 [Mesh Network] Subindo nó P2P privado e escutando conexões...")
         
         while self.is_running:
-            # Loop de manutenção das conexões com outros nós autorizados
-            await asyncio.sleep(10)
-            logger.debug("🌐 [Mesh Network] Sincronização de regras defensivas ativa.")
+            try:
+                known = len(self.mesh_orchestrator.known_peers)
+                blocked = len(self.mesh_orchestrator.shared_threat_intel.get("blocked_ips", []))
+                logger.debug(f"🌐 [Mesh Network] Sincronização ativa (Nós: {known}, IOCs compartilhados: {blocked}).")
+            except Exception as e:
+                logger.debug(f"[Mesh Network] Erro de sincronização: {e}")
+            await asyncio.sleep(15)
 
     async def _start_defensive_analyst(self):
         """Inicializa o motor de análise de ameaças e mitigação de incidentes."""
         logger.info("🛡️ [Defensive Analyst] Motor de inferência e análise em tempo real ativo.")
         
         while self.is_running:
-            await asyncio.sleep(3)
+            try:
+                import psutil
+                # Varredura não-bloqueante para integridade de processos de sistema
+                for proc in psutil.process_iter(['pid', 'name']):
+                    try:
+                        pname = (proc.info.get('name') or '').lower()
+                        if pname in ("mimikatz.exe", "procdump.exe"):
+                            logger.critical(f"🛑 [Defensive Analyst] Processo hostil interceptado pelo daemon: {pname} (PID: {proc.info.get('pid')})")
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        continue
+            except Exception as e:
+                logger.debug(f"[Defensive Analyst] Erro na verificação: {e}")
+            await asyncio.sleep(10)
+
 
     async def start(self):
         """Dispara todos os motores defensivos em paralelo."""
@@ -112,6 +139,14 @@ async def main():
         await daemon.stop()
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] (%(name)s) %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("sentinel_daemon.log", encoding="utf-8")
+        ]
+    )
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

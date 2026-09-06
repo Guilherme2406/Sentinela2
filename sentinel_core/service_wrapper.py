@@ -37,16 +37,31 @@ class SentinelaXDRWinService(win32serviceutil.ServiceFramework):
         self.main()
 
     def main(self):
-        # Aqui o loop do agente executa em segundo plano
+        # Inicializa o motor de defesa completo (API, motores soberanos, honeypot,
+        # NIDS, tarpit, watchdog de threads) dentro do contexto do Serviço Windows.
+        try:
+            from sentinela_service import SentinelBackgroundDaemon
+            self.daemon = SentinelBackgroundDaemon()
+            self.daemon.start_service(blocking=False)
+            logger.info("🚀 [SERVICE] Loop de defesa contínua iniciado sob o controle do Windows SCM.")
+        except Exception as e:
+            logger.exception(f"[SERVICE] Falha ao iniciar o motor de defesa: {e}")
+            # Não derruba o serviço silenciosamente; aguarda o SCM encerrar.
+            self.daemon = None
+
+        # Loop de vida do serviço: aguarda sinal de parada do Service Control Manager.
         while self.is_running:
-            # Aguarda 5 segundos ou sinal de parada
             rc = win32event.WaitForSingleObject(self.stop_event, 5000)
             if rc == win32event.WAIT_OBJECT_0:
                 break
-            
-            # Loop de monitoramento continuo
-            # Ex: ETW, Check de Honeytokens, PQC Heartbeat
-            pass
+
+        # Encerramento ordeiro dos motores (honeypot, nids, tarpit e runtime).
+        if getattr(self, "daemon", None) is not None:
+            try:
+                self.daemon.stop_service()
+            except Exception as e:
+                logger.debug(f"[SERVICE] Aviso no encerramento do daemon: {e}")
+        logger.info("🛑 [SERVICE] Serviço Sentinela XDR encerrado de forma ordeira.")
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:

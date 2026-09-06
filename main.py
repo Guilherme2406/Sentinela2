@@ -39,6 +39,16 @@ from sentinel_core.dlp_exfiltration_guard import DLPExfiltrationGuard
 from sentinel_core.execution_anti_exploit_guard import ExecutionAntiExploitGuard
 from sentinel_core.network_perimeter_guard import NetworkPerimeterGuard
 from sentinel_core.posture_persistence_guard import PosturePersistenceGuard
+from sentinel_core.hook_integrity_guard import HookIntegrityGuard
+from sentinel_core.c2_beacon_hunter import C2BeaconHunter
+from sentinel_core.token_armor_guard import TokenArmorGuard
+from sentinel_core.reverse_shell_guard import ReverseShellGuard
+from sentinel_core.portscan_disruptor import PortScanDisruptor
+from sentinel_core.byovd_guard import BYOVDGuard
+from sentinel_core.anti_hollowing_guard import AntiHollowingGuard
+from sentinel_core.lsass_guard import LSASSArmorGuard
+from sentinel_core.memory_rwx_hunter import MemoryRWXHunter
+from sentinel_core.ransomware_honeyfiles import RansomwareHoneyfiles
 
 from sentinel_api import app as flask_app, find_available_port, init_api
 
@@ -116,11 +126,11 @@ def main():
     # 2. Inicializa o Cofre Criptográfico
     key_path = os.path.join(base_dir, "sentinel.key")
     vault = CryptoVault(key_path)
-    logging.info(f"[+] Cofre Criptográfico AES-256 inicializado.")
+    logging.info("[+] Cofre Criptográfico AES-256 inicializado.")
 
     # 3. Inicializa o Detector de Ameaças & IOCs
     threat_detector = ThreatDetector(logger=logger)
-    logging.info(f"[+] Motor de Detecção de Ameaças (IOC / Hashes) ativo.")
+    logging.info("[+] Motor de Detecção de Ameaças (IOC / Hashes) ativo.")
 
     # 4. Inicializa o Motor de Resposta Automática (SOAR)
     quarantine_dir = os.path.join(base_dir, "quarantine")
@@ -129,7 +139,7 @@ def main():
 
     # 5. Inicializa o Escudo Ativo de Proteção Avançada (Active Shield & DLP)
     active_shield = ActiveShield(logger=logger, threat_detector=threat_detector, soar=soar)
-    logging.info(f"[+] Rede de Proteção Avançada (Active Shield - Inbound & Outbound DLP) ativa.")
+    logging.info("[+] Rede de Proteção Avançada (Active Shield - Inbound & Outbound DLP) ativa.")
 
     # 6. Configura o Monitor de Integridade de Arquivos (FIM)
     watch_dirs = [base_dir]
@@ -206,7 +216,17 @@ def main():
     anti_exploit_guard = ExecutionAntiExploitGuard(logger=logger, soar=soar)
     perimeter_guard = NetworkPerimeterGuard(logger=logger, soar=soar)
     posture_guard = PosturePersistenceGuard(logger=logger, soar=soar)
-    logging.info("[+] 20 Camadas Soberanas ativadas (LSASS Armor, DLP, Anti-Exploit, Perímetro DGA & Postura ASEP).")
+    hook_guard = HookIntegrityGuard(logger_instance=logger, soar=soar)
+    c2_hunter = C2BeaconHunter(logger_instance=logger, soar=soar, firewall=firewall_mgr)
+    token_armor = TokenArmorGuard(logger_instance=logger, soar=soar)
+    reverse_shell = ReverseShellGuard(logger_instance=logger, soar=soar, firewall=firewall_mgr)
+    portscan_disruptor = PortScanDisruptor(logger_instance=logger, soar=soar, firewall=firewall_mgr)
+    byovd_guard = BYOVDGuard(logger_instance=logger, soar=soar)
+    anti_hollowing = AntiHollowingGuard(logger_instance=logger, soar=soar)
+    lsass_guard = LSASSArmorGuard(logger_instance=logger)
+    rwx_hunter = MemoryRWXHunter(logger_instance=logger)
+    ransomware_canary = RansomwareHoneyfiles(logger_instance=logger)
+    logging.info("[+] Camadas Soberanas Ativas (LSASS Armor, DLP, Anti-Exploit, Hook Armor, C2 Jitter, Token Shield, BYOVD, RWX Hunter & Reverse Shell).")
 
     # 16. Injeta dependências na API Flask
     init_api(
@@ -228,11 +248,21 @@ def main():
         dlp_guard=dlp_guard,
         anti_exploit_guard=anti_exploit_guard,
         perimeter_guard=perimeter_guard,
-        posture_guard=posture_guard
+        posture_guard=posture_guard,
+        hook_guard=hook_guard,
+        c2_hunter=c2_hunter,
+        token_armor=token_armor,
+        reverse_shell=reverse_shell,
+        portscan_disruptor=portscan_disruptor,
+        byovd_guard=byovd_guard,
+        anti_hollowing_guard=anti_hollowing,
+        lsass_guard=lsass_guard,
+        rwx_hunter=rwx_hunter,
+        honeyfiles_guard=ransomware_canary
     )
 
     # 17. Banner final (a API já foi iniciada antecipadamente no passo 1.5)
-    _mark("Todos os 20 motores carregados e injetados na API")
+    _mark("Todos os motores soberanos carregados e injetados na API")
 
     logging.info("\n" + "=" * 65)
     logging.info("🟢 SENTINELA ENGINE & DASHBOARD EM EXECUÇÃO CONTÍNUA")
@@ -256,11 +286,15 @@ def main():
             edr_guard.auto_remediate()    # Neutralização EDR de comandos suspeitos
             kernel_monitor.inspect_system_integrity() # Integridade de arquivos críticos
 
-            # Varreduras periódicas das novas camadas soberanas
+            # Varreduras periódicas das camadas soberanas especializadas
             if scan_count % 3 == 0:
                 try:
                     identity_guard.scan_running_processes_and_cmdlines()
                     anti_exploit_guard.inspect_process_tree()
+                    token_armor.audit_running_processes_tokens()
+                    reverse_shell.scan_for_reverse_shells()
+                    c2_hunter.analyze_beaconing_patterns()
+                    lsass_guard.audit_lsass_access()
                 except Exception as ex:
                     logging.debug(f"[GUARD SCAN ERROR] {ex}")
 
@@ -268,12 +302,17 @@ def main():
                 try:
                     perimeter_guard.audit_arp_table()
                     posture_guard.scan_asep_registry_and_files()
+                    hook_guard.audit_memory_hooks()
+                    anti_hollowing.scan_system_processes_integrity()
+                    rwx_hunter.scan_all_critical_processes()
+                    byovd_guard.audit_installed_services_registry()
+                    ransomware_canary.check_integrity()
                 except Exception as ex:
                     logging.debug(f"[POSTURE/PERIMETER SCAN ERROR] {ex}")
 
             # Feedback no console a cada 6 varreduras (~30s)
             if scan_count % 6 == 0:
-                logging.info(f"[STATUS] Sentinela operando normalmente (20 Camadas Ativas). Varredura #{scan_count} concluída.")
+                logging.info(f"[STATUS] Sentinela operando normalmente (Motores Soberanos Ativos). Varredura #{scan_count} concluída.")
 
             time.sleep(5)
 

@@ -38,6 +38,28 @@ class CryptoVault:
     def decrypt_data(self, encrypted_data: bytes) -> bytes:
         return self.cipher.decrypt(encrypted_data)
 
+    def encrypt(self, data) -> str:
+        if isinstance(data, str):
+            raw_bytes = data.encode("utf-8")
+            enc = self.encrypt_data(raw_bytes)
+            return enc.decode("utf-8")
+        enc = self.encrypt_data(data)
+        try:
+            return enc.decode("utf-8")
+        except UnicodeDecodeError:
+            return enc
+
+    def decrypt(self, data):
+        if isinstance(data, str):
+            raw_bytes = data.encode("utf-8")
+        else:
+            raw_bytes = data
+        dec = self.decrypt_data(raw_bytes)
+        try:
+            return dec.decode("utf-8")
+        except UnicodeDecodeError:
+            return dec
+
     def encrypt_file(self, file_path: str, output_path: Optional[str] = None) -> bool:
         try:
             if not os.path.exists(file_path):
